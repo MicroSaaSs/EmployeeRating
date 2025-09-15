@@ -13,6 +13,7 @@ type Rating = {
   reviewerImage?: string | null;
   reviewerCompany?: string;
   relationshipType?: string;
+  isAnonymous?: boolean;
   rating: number;
   category: string;
   date: string;
@@ -89,15 +90,18 @@ const RatingsSection: React.FC<RatingsSectionProps> = ({
     return colors[category] || colors.overall;
   };
 
-  const anonymizedRatings = ratings.map((review) => {
-    const anonymized = anonymizeReview(review as any) as any;
-    if (review.relationshipType && review.reviewerCompany) {
-      anonymized.reviewerTitle = generateAnonymousTitle(
-        review.relationshipType,
-        review.reviewerCompany
-      );
+  const displayedRatings = ratings.map((review) => {
+    if (review.isAnonymous) {
+      const anonymized = anonymizeReview(review as any) as any;
+      if (review.relationshipType && review.reviewerCompany) {
+        anonymized.reviewerTitle = generateAnonymousTitle(
+          review.relationshipType,
+          review.reviewerCompany
+        );
+      }
+      return anonymized as Rating;
     }
-    return anonymized as Rating;
+    return review;
   });
 
   return (
@@ -149,7 +153,7 @@ const RatingsSection: React.FC<RatingsSectionProps> = ({
       </div>
 
       <div className="divide-y divide-border">
-        {anonymizedRatings.length === 0 ? (
+        {displayedRatings.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <Icon
               name="MessageSquare"
@@ -170,7 +174,7 @@ const RatingsSection: React.FC<RatingsSectionProps> = ({
             </div>
           </div>
         ) : (
-          anonymizedRatings.map((review) => (
+          displayedRatings.map((review) => (
             <div key={review.id} className="px-6 py-6">
               <div className="flex space-x-4">
                 <div className="flex-shrink-0">
@@ -321,7 +325,7 @@ const RatingsSection: React.FC<RatingsSectionProps> = ({
           </div>
         </div>
       </div>
-      {anonymizedRatings.length > 0 && (
+      {displayedRatings.length > 0 && (
         <div className="px-6 py-4 border-t border-border text-center">
           <button className="px-6 py-2 text-primary font-medium hover:bg-primary-50 rounded-lg transition-smooth">
             Load More Reviews
