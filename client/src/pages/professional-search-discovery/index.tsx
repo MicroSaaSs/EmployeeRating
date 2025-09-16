@@ -458,7 +458,13 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                   onProfessionalClick={handleProfessionalClick}
                 />
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+                <div
+                  className={`grid gap-6 p-6 ${
+                    selectedProfessional
+                      ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-2"
+                      : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+                  }`}
+                >
                   {isLoading ? (
                     Array.from({ length: 6 }).map((_, index) => (
                       <div
@@ -606,6 +612,43 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                           ))}
                       </div>
                     </div>
+
+                    {selectedProfessional.recentRatings &&
+                      selectedProfessional.recentRatings.length > 0 && (
+                        <div>
+                          <h5 className="font-medium text-text-primary mb-2">
+                            Recent Feedback
+                          </h5>
+                          <div className="space-y-2">
+                            {selectedProfessional.recentRatings
+                              .slice(0, 2)
+                              .map((review, index) => (
+                                <div
+                                  key={index}
+                                  className="flex items-start space-x-2"
+                                >
+                                  <div className="flex items-center">
+                                    {Array.from({ length: 5 }).map((_, i) => (
+                                      <Icon
+                                        key={i}
+                                        name="Star"
+                                        size={12}
+                                        className={
+                                          i < review.rating
+                                            ? "text-yellow-400 fill-current"
+                                            : "text-gray-300"
+                                        }
+                                      />
+                                    ))}
+                                  </div>
+                                  <p className="text-xs text-text-secondary line-clamp-2 flex-1">
+                                    "{review.comment}"
+                                  </p>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
 
                     <div className="space-y-2">
                       <button

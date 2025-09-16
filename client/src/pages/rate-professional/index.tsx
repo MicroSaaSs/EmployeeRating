@@ -256,7 +256,7 @@ const RateProfessional: React.FC = () => {
         </div>
         <button
           onClick={() => setCurrentStep(1)}
-          className="px-6 py-3 bg-primary text_white rounded-lg hover:bg-primary-700 transition-smooth"
+          className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-700 transition-smooth"
         >
           Continue to Rating
         </button>
