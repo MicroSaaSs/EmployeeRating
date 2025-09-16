@@ -96,6 +96,31 @@ const ProfessionalSearchDiscovery: React.FC = () => {
       responseRate: 95,
       lastActive: "2 hours ago",
     },
+    {
+      id: 2,
+      name: "Sarah Johnson",
+      title: "Senior Software Engineer",
+      company: "Google",
+      location: "San Francisco, CA",
+      industry: "Technology",
+      experienceLevel: "Senior",
+      companySize: "Large",
+      avatar: "https://randomuser.me/api/portraits/women/1.jpg",
+      rating: 4.8,
+      reviewCount: 127,
+      skills: ["React", "JavaScript", "Node.js", "Python"],
+      recentRatings: [
+        {
+          rating: 5,
+          comment: "Excellent technical skills and leadership",
+          date: "2024-01-15",
+        },
+        { rating: 4, comment: "Great team player", date: "2024-01-10" },
+      ],
+      verified: true,
+      responseRate: 95,
+      lastActive: "2 hours ago",
+    },
   ];
 
   const mockSuggestions = [
@@ -268,7 +293,7 @@ const ProfessionalSearchDiscovery: React.FC = () => {
               {searchQuery && (
                 <button
                   onClick={() => handleSearch("")}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-text-secondary hover:text_primary"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-text-secondary hover:text-primary"
                 >
                   <Icon name="X" size={20} />
                 </button>
@@ -338,7 +363,7 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                   )}
                 </div>
                 {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute top_full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-modal z-50">
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-modal z-50">
                     {suggestions.map((suggestion, index) => (
                       <button
                         key={index}
@@ -458,13 +483,7 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                   onProfessionalClick={handleProfessionalClick}
                 />
               ) : (
-                <div
-                  className={`grid gap-6 p-6 ${
-                    selectedProfessional
-                      ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-2"
-                      : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
-                  }`}
-                >
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] items-stretch gap-3 p-4">
                   {isLoading ? (
                     Array.from({ length: 6 }).map((_, index) => (
                       <div
@@ -537,7 +556,7 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                   </div>
 
                   <div className="space-y-4">
-                    <div className="flex items_center space-x-3">
+                    <div className="flex items-center space-x-3">
                       <Image
                         src={selectedProfessional.avatar}
                         alt={selectedProfessional.name}
@@ -589,7 +608,7 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                         <Icon
                           name="MapPin"
                           size={16}
-                          className="text-text_secondary"
+                          className="text-text-secondary"
                         />
                         <span>{selectedProfessional.location}</span>
                       </div>

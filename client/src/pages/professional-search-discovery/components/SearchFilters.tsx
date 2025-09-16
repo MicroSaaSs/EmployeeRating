@@ -94,7 +94,7 @@ const SearchFilters: React.FC<SearchFiltersProps> = ({
 
       <div
         className={`
-        fixed md:relative top-0 left-0 h-full w-80 bg-surface border-r border-border z-50
+        fixed md:relative top-0 left-0 h-full w-64 bg-surface border-r border-border z-50
         transform transition-transform duration-300 ease-in-out overflow-y-auto
         ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         ${isOpen ? "md:block" : "md:block"}

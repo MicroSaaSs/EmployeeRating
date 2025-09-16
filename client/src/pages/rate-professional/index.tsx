@@ -552,7 +552,7 @@ const RateProfessional: React.FC = () => {
           >
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3">
               <div className="mb-2 sm:mb-0">
-                <h4 className="font_medium text-text-primary">
+                <h4 className="font-medium text-text-primary">
                   {category.label}
                 </h4>
                 <p className="text-sm text-text-secondary">
@@ -934,7 +934,7 @@ const RateProfessional: React.FC = () => {
                   ? "Anonymous Rating Submitted Successfully!"
                   : "Rating Submitted Successfully!"}
               </h1>
-              <p className="text-text_secondary mb-4">
+              <p className="text-text-secondary mb-4">
                 {formData.isAnonymous
                   ? "Thank you for providing anonymous feedback about "
                   : "Thank you for providing feedback about "}
@@ -1078,10 +1078,10 @@ const RateProfessional: React.FC = () => {
 
       {showCancelDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-1020">
-          <div className="bg-surface rounded-lg max-w-md w_full">
+          <div className="bg-surface rounded-lg max-w-md w-full">
             <div className="p-6">
               <div className="flex items-center space-x-3 mb-4">
-                <div className="w-10 h-10 bg-warning-50 rounded-full flex items_center justify-center">
+                <div className="w-10 h-10 bg-warning-50 rounded-full flex items-center justify-center">
                   <Icon
                     name="AlertTriangle"
                     size={20}

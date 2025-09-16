@@ -50,11 +50,11 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 
   return (
     <div
-      className="bg-surface rounded-lg border border-border hover:border-primary-200 hover:shadow-card transition-all duration-200 cursor-pointer group overflow-hidden min-h-[260px] min-w-[260px]"
+      className="bg-surface rounded-lg border border-border hover:border-primary-200 hover:shadow-card transition-all duration-200 cursor-pointer group overflow-hidden min-h-[260px] min-w-[240px] box-border"
       onClick={handleCardClick}
       onMouseEnter={handlePreviewHover}
     >
-      <div className="p-6 flex flex-col h-full">
+      <div className="p-4 flex flex-col h-full justify-between gap-2">
         {/* Row 1: Avatar + Rating with reviewCount */}
         <div className="flex items-center stretch mb-3">
           <div className="relative">

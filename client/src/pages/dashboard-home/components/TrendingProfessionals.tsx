@@ -174,7 +174,7 @@ const TrendingProfessionals: React.FC = () => {
                       <p className="text-sm text-text-secondary truncate">
                         {professional.title}
                       </p>
-                      <p className="text-xs text-text_secondary truncate">
+                      <p className="text-xs text-text-secondary truncate">
                         {professional.company}
                       </p>
                     </div>

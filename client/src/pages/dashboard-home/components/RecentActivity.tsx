@@ -189,7 +189,7 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ refreshing }) => {
               size={48}
               className="mx-auto text-border mb-4"
             />
-            <h3 className="text-lg font_medium text-text-primary mb-2">
+            <h3 className="text-lg font-medium text-text-primary mb-2">
               No Recent Activity
             </h3>
             <p className="text-text-secondary mb-6">
@@ -197,7 +197,7 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ refreshing }) => {
             </p>
             <Link
               to="/professional-search-discovery"
-              className="inline-flex items_center px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-700 transition-smooth"
+              className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-700 transition-smooth"
             >
               <Icon name="Search" size={16} className="mr-2" />
               Find Professionals

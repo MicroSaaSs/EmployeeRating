@@ -177,7 +177,7 @@ const MapView: React.FC<MapViewProps> = ({
                       />
                     )}
                   </div>
-                  <p className="text-text_secondary text-sm mb-1">
+                  <p className="text-text-secondary text-sm mb-1">
                     {selectedProfessional.title}
                   </p>
                   <p className="text-text-secondary text-sm">
