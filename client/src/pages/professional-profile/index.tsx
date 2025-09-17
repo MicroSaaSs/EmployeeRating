@@ -253,7 +253,7 @@ const ProfessionalProfile: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex items-center space-x-2 text-sm text-text-secondary mb-6 pt-6">
             {breadcrumbs.map((crumb, index) => (
-              <React.Fragment key={crumb.path}>
+              <React.Fragment key={`${crumb.path}-${index}`}>
                 {index > 0 && <Icon name="ChevronRight" size={16} />}
                 {index === breadcrumbs.length - 1 ? (
                   <span className="text-text-primary font-medium">

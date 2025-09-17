@@ -20,7 +20,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
     name,
     title,
     company,
-    location,
     avatar,
     rating,
     reviewCount,
@@ -28,7 +27,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
     verified,
     responseRate,
     lastActive,
-    recentRatings,
   } = professional;
 
   const handleCardClick = (e: React.MouseEvent) => {
@@ -40,7 +38,6 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
     e.stopPropagation();
     onRate(professional);
   };
-
   const handlePreviewHover = () => {
     onPreview?.(professional);
   };
@@ -53,77 +50,57 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
 
   return (
     <div
-      className="bg-surface rounded-lg border border-border hover:border-primary-200 hover:shadow-card transition-all duration-200 cursor-pointer group"
+      className="bg-surface rounded-lg border border-border hover:border-primary-200 hover:shadow-card transition-all duration-200 cursor-pointer group overflow-hidden min-h-[260px] min-w-[240px] box-border"
       onClick={handleCardClick}
       onMouseEnter={handlePreviewHover}
     >
-      <div className="p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center space-x-4 flex-1 min-w-0">
-            <div className="relative">
-              <Image
-                src={avatar}
-                alt={name}
-                className="w-16 h-16 rounded-full object-cover"
-              />
-              {verified && (
-                <div className="absolute -bottom-1 -right-1 bg_success rounded-full p-1">
-                  <Icon name="Check" size={12} color="white" />
-                </div>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center space-x-2 mb-1">
-                <h3 className="font-semibold text-text-primary truncate">
-                  {name}
-                </h3>
-                {verified && (
-                  <Icon
-                    name="CheckCircle"
-                    size={16}
-                    className="text-success flex-shrink-0"
-                  />
-                )}
+      <div className="p-4 flex flex-col h-full justify-between gap-2">
+        {/* Row 1: Avatar + Rating with reviewCount */}
+        <div className="flex items-center stretch mb-3">
+          <div className="relative">
+            <Image
+              src={avatar}
+              alt={name}
+              className="w-16 h-16 rounded-full object-cover"
+            />
+            {verified && (
+              <div className="absolute -bottom-1 -right-1 bg-success rounded-full p-1">
+                <Icon name="Check" size={12} color="white" />
               </div>
-              <p className="text-text-secondary text-sm mb-1 truncate">
-                {title}
-              </p>
-              <div className="flex items-center space-x-2 text-sm text-text-secondary">
-                <Icon name="Building" size={14} />
-                <span className="truncate">{company}</span>
-              </div>
-            </div>
+            )}
           </div>
-
-          <div className="flex flex-col items-end space-y-1 flex-shrink-0">
-            <div className="flex items-center space-x-1">
+          <div className="flex flex-col items-end w-full space-y-1">
+            <div className="flex items-end space-x-1">
               <Icon
                 name="Star"
-                size={16}
+                size={34}
                 className="text-yellow-400 fill-current"
               />
-              <span className="font-medium text-text-primary">{rating}</span>
+              <span className="font-semibold text-text-primary text-xl md:text-2xl leading-none">
+                {rating}
+              </span>
             </div>
-            <span className="text-xs text-text-secondary">
+            <span className="text-sm md:text-base text-text-secondary">
               ({reviewCount} reviews)
             </span>
           </div>
         </div>
 
-        <div className="flex items-center justify-between mb-4 text-sm">
-          <div className="flex items-center space-x-2 text-text-secondary">
-            <Icon name="MapPin" size={14} />
-            <span className="truncate">{location}</span>
-          </div>
-          <div
-            className={`flex items-center space-x-1 ${getLastActiveColor()}`}
-          >
-            <Icon name="Clock" size={14} />
-            <span className="text-xs">{lastActive}</span>
-          </div>
+        {/* Row 2: Name + lastActive */}
+        <div className="flex items-center justify-between gap-3 mb-1 min-w-0">
+          <h3 className="font-semibold text-text-primary truncate">{name}</h3>
         </div>
 
-        <div className="mb-4">
+        {/* Row 3: Title */}
+        <p className="text-text-secondary text-sm truncate mb-1">{title}</p>
+
+        {/* Row 4: Company */}
+        <div className="flex items-center space-x-2 text-sm text-text-secondary mb-3">
+          <Icon name="Building" size={14} />
+          <span className="truncate">{company}</span>
+        </div>
+
+        <div>
           <div className="flex flex-wrap gap-2">
             {skills.slice(0, 3).map((skill, index) => (
               <span
@@ -140,73 +117,21 @@ const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
             )}
           </div>
         </div>
-
-        {recentRatings && recentRatings.length > 0 && (
-          <div className="mb-4 p-3 bg-background rounded-lg">
-            <div className="flex items-center space-x-2 mb-2">
-              <Icon
-                name="MessageSquare"
-                size={14}
-                className="text-text-secondary"
-              />
-              <span className="text-xs font-medium text-text-secondary">
-                Recent Feedback
-              </span>
-            </div>
-            <div className="space-y-2">
-              {recentRatings.slice(0, 1).map((review, index) => (
-                <div key={index} className="flex items-start space-x-2">
-                  <div className="flex items-center">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Icon
-                        key={i}
-                        name="Star"
-                        size={12}
-                        className={
-                          i < review.rating
-                            ? "text-yellow-400 fill-current"
-                            : "text-gray-300"
-                        }
-                      />
-                    ))}
-                  </div>
-                  <p className="text-xs text-text-secondary line-clamp-2 flex-1">
-                    "{review.comment}"
-                  </p>
-                </div>
-              ))}
-            </div>
+        <div className="flex items-center justify-between text-sm mt-auto pt-2">
+          <div className="flex items-center space-x-1">
+            <Icon name="TrendingUp" size={14} className="text-success" />
+            <span className="text-text-secondary">
+              {responseRate}% response
+            </span>
           </div>
-        )}
-
-        <div className="flex items-center justify-between mb-4 text-sm">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-1">
-              <Icon name="TrendingUp" size={14} className="text-success" />
-              <span className="text-text-secondary">
-                {responseRate}% response
-              </span>
-            </div>
+          <div>
+            <button
+              onClick={handleRateClick}
+              className="px-4 py-2 border border-border text-text-primary rounded-lg hover:bg-primary-50 hover:border-primary-200 transition-smooth text-sm font-medium"
+            >
+              <Icon name="Star" size={16} />
+            </button>
           </div>
-          <div className="flex items-center space-x-1 text-text-secondary">
-            <Icon name="Eye" size={14} />
-            <span className="text-xs">View profile</span>
-          </div>
-        </div>
-
-        <div className="flex space-x-3">
-          <button
-            onClick={handleCardClick}
-            className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-700 transition-smooth text-sm font-medium"
-          >
-            View Profile
-          </button>
-          <button
-            onClick={handleRateClick}
-            className="px-4 py-2 border border-border text-text-primary rounded-lg hover:bg-primary-50 hover:border-primary-200 transition-smooth text-sm font-medium"
-          >
-            <Icon name="Star" size={16} />
-          </button>
         </div>
       </div>
 

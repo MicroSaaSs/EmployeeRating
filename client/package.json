@@ -32,6 +32,9 @@
     "build": "vite build --sourcemap",
     "serve": "vite preview"
   },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "eslintConfig": {
     "extends": [
       "react-app",

@@ -189,7 +189,7 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ refreshing }) => {
               size={48}
               className="mx-auto text-border mb-4"
             />
-            <h3 className="text-lg font_medium text-text-primary mb-2">
+            <h3 className="text-lg font-medium text-text-primary mb-2">
               No Recent Activity
             </h3>
             <p className="text-text-secondary mb-6">

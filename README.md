@@ -1,3 +1,18 @@
+# ProRate – Employee Rating Service
+
+ProRate is a professional reputation platform — think Glassdoor for people, not companies. It helps professionals discover, rate, and learn about colleagues based on real work experiences.
+
+- **LinkedIn-anchored identities**: authenticate/verify profiles using LinkedIn data (client stubs now).
+- **Anonymous or identified ratings**: privacy-first submission with optional identity reveal.
+- **Eligibility verification**: ratings allowed only for colleagues with shared company history.
+- **Structured reviews**: overall score, category scores (technical, communication, leadership, reliability, teamwork), and written feedback.
+- **Search & discovery**: find professionals by name, title, company, skills, and filters; map/list views.
+- **Profiles & analytics**: rich profile pages with community ratings and trend insights.
+- **My Ratings dashboard**: manage ratings given/received, export, and see personal analytics.
+- **Drafts**: save incomplete ratings locally and finish later.
+
+Current status: this repository contains the client app only (mock data and local verification). Backend services (OAuth, storage, moderation, identity/eligibility enforcement) are planned next.
+
 # React
 
 A modern React-based project utilizing the latest frontend technologies and tools for building responsive web applications.

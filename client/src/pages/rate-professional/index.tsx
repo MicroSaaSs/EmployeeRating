@@ -67,6 +67,7 @@ const RateProfessional: React.FC = () => {
     relationshipType: "",
     workDuration: "",
     isDraft: false,
+    isAnonymous: true,
   });
 
   const [showPreview, setShowPreview] = useState(false);
@@ -138,9 +139,9 @@ const RateProfessional: React.FC = () => {
 
   const ratingGuidelines = [
     {
-      title: "Anonymous & Confidential",
+      title: "Privacy & Identity",
       description:
-        "All ratings are completely anonymous. Your identity will never be revealed to the professional being rated.",
+        "You can submit anonymously or choose to show your name. Anonymous ratings never reveal your identity.",
     },
     {
       title: "Company Colleagues Only",
@@ -246,16 +247,16 @@ const RateProfessional: React.FC = () => {
         </div>
         <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
           <h4 className="font-medium text-primary mb-2">
-            Anonymous Rating System
+            Privacy & Identity Options
           </h4>
           <p className="text-primary text-sm">
-            Your rating will be completely anonymous. Your identity will never
-            be revealed to {professionalData.name} or other users.
+            By default, your rating is anonymous. You can optionally choose to
+            show your name before submitting.
           </p>
         </div>
         <button
           onClick={() => setCurrentStep(1)}
-          className="px-6 py-3 bg-primary text_white rounded-lg hover:bg-primary-700 transition-smooth"
+          className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-700 transition-smooth"
         >
           Continue to Rating
         </button>
@@ -385,11 +386,16 @@ const RateProfessional: React.FC = () => {
     const submissionData = {
       ...formData,
       professionalId: professionalData.id,
-      isAnonymous: true,
+      isAnonymous: formData.isAnonymous,
       verificationResult,
       submittedAt: new Date().toISOString(),
     };
-    console.log("Anonymous rating submitted:", submissionData);
+    console.log(
+      formData.isAnonymous
+        ? "Anonymous rating submitted:"
+        : "Identified rating submitted:",
+      submissionData
+    );
     await new Promise((resolve) => setTimeout(resolve, 1200));
     setIsSubmitting(false);
     setShowSuccess(true);
@@ -448,13 +454,51 @@ const RateProfessional: React.FC = () => {
             </p>
           </div>
           <div className="text-right">
-            <div className="bg-primary-50 border border-primary-200 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <Icon name="EyeOff" size={16} className="text-primary" />
-                <span className="text-sm font-medium text-primary">
-                  Anonymous Rating
-                </span>
-              </div>
+            <div className="inline-flex items-center rounded-lg border border-border overflow-hidden">
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData((prev) => ({ ...prev, isAnonymous: true }))
+                }
+                className={`px-3 py-2 flex items-center space-x-1 text-sm transition-smooth ${
+                  formData.isAnonymous
+                    ? "bg-primary-50 text-primary"
+                    : "text-text-secondary hover:bg-primary-50"
+                }`}
+              >
+                <Icon
+                  name="EyeOff"
+                  size={16}
+                  className={
+                    formData.isAnonymous
+                      ? "text-primary"
+                      : "text-text-secondary"
+                  }
+                />
+                <span>Anonymous</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData((prev) => ({ ...prev, isAnonymous: false }))
+                }
+                className={`px-3 py-2 flex items-center space-x-1 text-sm border-l border-border transition-smooth ${
+                  !formData.isAnonymous
+                    ? "bg-primary-50 text-primary"
+                    : "text-text-secondary hover:bg-primary-50"
+                }`}
+              >
+                <Icon
+                  name="User"
+                  size={16}
+                  className={
+                    !formData.isAnonymous
+                      ? "text-primary"
+                      : "text-text-secondary"
+                  }
+                />
+                <span>Show name</span>
+              </button>
             </div>
           </div>
         </div>
@@ -508,7 +552,7 @@ const RateProfessional: React.FC = () => {
           >
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3">
               <div className="mb-2 sm:mb-0">
-                <h4 className="font_medium text-text-primary">
+                <h4 className="font-medium text-text-primary">
                   {category.label}
                 </h4>
                 <p className="text-sm text-text-secondary">
@@ -584,15 +628,17 @@ const RateProfessional: React.FC = () => {
         )}
       </div>
       <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
-        <h4 className="font-medium text-primary mb-2">
-          Anonymous Feedback Tips
-        </h4>
+        <h4 className="font-medium text-primary mb-2">Feedback Tips</h4>
         <ul className="text-sm text-primary space-y-1">
           <li>• Be specific with examples</li>
           <li>• Focus on professional behavior and skills</li>
           <li>• Provide constructive suggestions</li>
           <li>• Keep feedback respectful and objective</li>
-          <li>• Remember: your identity will remain completely anonymous</li>
+          {formData.isAnonymous ? (
+            <li>• Your identity will not be shown</li>
+          ) : (
+            <li>• Your name will be visible to others</li>
+          )}
         </ul>
       </div>
     </div>
@@ -658,13 +704,21 @@ const RateProfessional: React.FC = () => {
           <Icon name="Shield" size={20} className="text-success mt-0.5" />
           <div className="flex-1">
             <h4 className="font-medium text-success mb-1">
-              Complete Anonymity Guaranteed
+              {formData.isAnonymous
+                ? "Complete Anonymity"
+                : "Identified Submission"}
             </h4>
-            <p className="text-success text-sm">
-              Your identity will never be revealed. This rating will be
-              displayed as coming from an "Anonymous Colleague" with only the
-              relationship context and company verification shown.
-            </p>
+            {formData.isAnonymous ? (
+              <p className="text-success text-sm">
+                Your identity will not be revealed. This rating will appear from
+                an "Anonymous Colleague" with only relationship context and
+                company verification.
+              </p>
+            ) : (
+              <p className="text-success text-sm">
+                Your name and public profile will be shown with this rating.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -675,7 +729,9 @@ const RateProfessional: React.FC = () => {
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-text-primary mb-2">
-          Review Your Anonymous Rating
+          {formData.isAnonymous
+            ? "Review Your Anonymous Rating"
+            : "Review Your Identified Rating"}
         </h3>
         <p className="text-text-secondary mb-6">
           Please review your rating before submitting
@@ -684,9 +740,15 @@ const RateProfessional: React.FC = () => {
       <div className="bg-surface border border-border rounded-lg p-6 space-y-6">
         <div className="bg-warning-50 border border-warning-200 rounded-lg p-3">
           <div className="flex items-center space-x-2">
-            <Icon name="EyeOff" size={16} className="text-warning" />
+            <Icon
+              name={formData.isAnonymous ? "EyeOff" : "User"}
+              size={16}
+              className="text-warning"
+            />
             <span className="text-sm font-medium text-warning">
-              This rating will be submitted anonymously
+              {formData.isAnonymous
+                ? "This rating will be submitted anonymously"
+                : "This rating will be submitted with your identity"}
             </span>
           </div>
         </div>
@@ -763,7 +825,10 @@ const RateProfessional: React.FC = () => {
             How this will appear:
           </h4>
           <p className="text-primary text-sm">
-            "Anonymous Colleague" •{" "}
+            {formData.isAnonymous
+              ? '"Anonymous Colleague"'
+              : '"Your public profile name"'}{" "}
+            •{" "}
             {
               relationshipTypes.find(
                 (t) => t.value === formData.relationshipType
@@ -865,20 +930,26 @@ const RateProfessional: React.FC = () => {
                 <Icon name="CheckCircle" size={32} className="text-success" />
               </div>
               <h1 className="text-2xl font-bold text-text-primary mb-4">
-                Anonymous Rating Submitted Successfully!
+                {formData.isAnonymous
+                  ? "Anonymous Rating Submitted Successfully!"
+                  : "Rating Submitted Successfully!"}
               </h1>
               <p className="text-text-secondary mb-4">
-                Thank you for providing anonymous feedback about{" "}
+                {formData.isAnonymous
+                  ? "Thank you for providing anonymous feedback about "
+                  : "Thank you for providing feedback about "}
                 {professionalData.name}.
               </p>
-              <div className="bg-success-50 border border-success-200 rounded-lg p-4 mb-8">
-                <div className="flex items-center space-x-2 justify-center">
-                  <Icon name="Shield" size={16} className="text-success" />
-                  <span className="text-success text-sm font-medium">
-                    Your identity remains completely anonymous
-                  </span>
+              {formData.isAnonymous && (
+                <div className="bg-success-50 border border-success-200 rounded-lg p-4 mb-8">
+                  <div className="flex items-center space-x-2 justify-center">
+                    <Icon name="Shield" size={16} className="text-success" />
+                    <span className="text-success text-sm font-medium">
+                      Your identity remains completely anonymous
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
                 <button
@@ -916,7 +987,7 @@ const RateProfessional: React.FC = () => {
             <p className="text-text-secondary">
               {currentStep === 0
                 ? "We need to verify your company history to ensure rating authenticity."
-                : "Share your anonymous experience working with this professional to help others make informed decisions."}
+                : "Share your experience working with this professional to help others make informed decisions."}
             </p>
           </div>
           {renderProgressBar()}
@@ -1007,10 +1078,10 @@ const RateProfessional: React.FC = () => {
 
       {showCancelDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-1020">
-          <div className="bg-surface rounded-lg max-w-md w_full">
+          <div className="bg-surface rounded-lg max-w-md w-full">
             <div className="p-6">
               <div className="flex items-center space-x-3 mb-4">
-                <div className="w-10 h-10 bg-warning-50 rounded-full flex items_center justify-center">
+                <div className="w-10 h-10 bg-warning-50 rounded-full flex items-center justify-center">
                   <Icon
                     name="AlertTriangle"
                     size={20}
