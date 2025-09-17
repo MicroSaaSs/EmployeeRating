@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import Icon from "../AppIcon";
 import Image from "../AppImage";
+import { useAuth } from "../../providers/AuthProvider";
 
 const Header: React.FC = () => {
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
@@ -45,7 +46,9 @@ const Header: React.FC = () => {
     setIsProfileMenuOpen(!isProfileMenuOpen);
   };
 
-  const handleLogout = () => {
+  const { logout } = useAuth();
+  const handleLogout = async () => {
+    await logout();
     navigate("/login-register");
     setIsProfileMenuOpen(false);
   };

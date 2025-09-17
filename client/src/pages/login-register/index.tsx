@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import Icon from "../../components/AppIcon";
+import { startLinkedInLogin } from "../../utils/auth";
 
 /**
  * Modern, friendly redesign for the ProRate login/landing page.
@@ -295,14 +296,10 @@ const PageChrome: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 const LoginRegister: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   // Tooltip hover/FOCUS handled in WhyLinkedInDisclosure; no state needed here
-  const navigate = useNavigate();
 
   const handleLinkedInAuth = async () => {
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      navigate("/dashboard-home");
-    }, 2000);
+    startLinkedInLogin();
   };
 
   const year = useMemo(() => new Date().getFullYear(), []);
