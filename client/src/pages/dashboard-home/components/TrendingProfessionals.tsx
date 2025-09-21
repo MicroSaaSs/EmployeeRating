@@ -22,22 +22,9 @@ const TrendingProfessionals: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const mockProfessionals: Professional[] = [
-    {
-      id: 1,
-      name: "Emily Chen",
-      title: "Senior Software Engineer",
-      company: "Google",
-      avatar:
-        "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
-      averageRating: 4.9,
-      totalRatings: 127,
-      topSkills: ["React", "Node.js", "System Design"],
-      recentAchievement: "Led migration to microservices architecture",
-      trending: true,
-      location: "San Francisco, CA",
-    },
-  ];
+  /* Mock removed
+  const mockProfessionals: Professional[] = [ ... ];
+  */
 
   useEffect(() => {
     loadTrendingProfessionals();
@@ -45,8 +32,8 @@ const TrendingProfessionals: React.FC = () => {
 
   const loadTrendingProfessionals = async () => {
     setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    setProfessionals(mockProfessionals);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    setProfessionals([]);
     setLoading(false);
   };
 

@@ -1,7 +1,6 @@
 import { Controller, Get, Res, Logger, Query, Req, Post } from "@nestjs/common";
-import type { Response } from "express";
 import { AuthService } from "./auth.service";
-
+import type { Response } from "express";
 @Controller("auth")
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);

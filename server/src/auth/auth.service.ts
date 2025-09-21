@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { UsersService } from "../users/users.service";
 import axios from "axios";
 import { nanoid } from "nanoid";
 
@@ -7,6 +8,7 @@ const SESSIONS = new Map<string, any>();
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  constructor(private readonly users: UsersService) {}
   private get clientId() {
     return process.env.LINKEDIN_CLIENT_ID || "";
   }
@@ -72,6 +74,8 @@ export class AuthService {
       email: userinfo.data?.email,
       avatar: userinfo.data?.picture,
     };
+    // Persist/update user in memory
+    this.users.upsert(user);
 
     const sid = nanoid(18);
     SESSIONS.set(sid, { user, accessToken });

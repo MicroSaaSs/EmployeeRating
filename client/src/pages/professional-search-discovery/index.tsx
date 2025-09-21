@@ -70,73 +70,13 @@ const ProfessionalSearchDiscovery: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const debounceRef = useRef<number | null>(null);
 
-  const mockProfessionals: Professional[] = [
-    {
-      id: 1,
-      name: "Sarah Johnson",
-      title: "Senior Software Engineer",
-      company: "Google",
-      location: "San Francisco, CA",
-      industry: "Technology",
-      experienceLevel: "Senior",
-      companySize: "Large",
-      avatar: "https://randomuser.me/api/portraits/women/1.jpg",
-      rating: 4.8,
-      reviewCount: 127,
-      skills: ["React", "JavaScript", "Node.js", "Python"],
-      recentRatings: [
-        {
-          rating: 5,
-          comment: "Excellent technical skills and leadership",
-          date: "2024-01-15",
-        },
-        { rating: 4, comment: "Great team player", date: "2024-01-10" },
-      ],
-      verified: true,
-      responseRate: 95,
-      lastActive: "2 hours ago",
-    },
-    {
-      id: 2,
-      name: "Sarah Johnson",
-      title: "Senior Software Engineer",
-      company: "Google",
-      location: "San Francisco, CA",
-      industry: "Technology",
-      experienceLevel: "Senior",
-      companySize: "Large",
-      avatar: "https://randomuser.me/api/portraits/women/1.jpg",
-      rating: 4.8,
-      reviewCount: 127,
-      skills: ["React", "JavaScript", "Node.js", "Python"],
-      recentRatings: [
-        {
-          rating: 5,
-          comment: "Excellent technical skills and leadership",
-          date: "2024-01-15",
-        },
-        { rating: 4, comment: "Great team player", date: "2024-01-10" },
-      ],
-      verified: true,
-      responseRate: 95,
-      lastActive: "2 hours ago",
-    },
-  ];
+  /* Mock removed
+  const mockProfessionals: Professional[] = [ ... ];
+  */
 
-  const mockSuggestions = [
-    "Software Engineer",
-    "Product Manager",
-    "UX Designer",
-    "Data Scientist",
-    "Marketing Director",
-    "DevOps Engineer",
-    "Frontend Developer",
-    "Backend Developer",
-    "Full Stack Developer",
-    "Business Analyst",
-    "Project Manager",
-    "Scrum Master",
-  ];
+  /* Mock removed
+  const mockSuggestions = [ ... ];
+  */
 
   const sortOptions: Array<{ value: typeof sortBy; label: string }> = [
     { value: "relevance", label: "Most Relevant" },
@@ -146,8 +86,9 @@ const ProfessionalSearchDiscovery: React.FC = () => {
   ];
 
   useEffect(() => {
-    setProfessionals(mockProfessionals);
-    setFilteredProfessionals(mockProfessionals);
+    // No mock data; leave empty until API is wired
+    setProfessionals([]);
+    setFilteredProfessionals([]);
     const savedHistory = localStorage.getItem("searchHistory");
     if (savedHistory) {
       setSearchHistory(JSON.parse(savedHistory));
@@ -238,15 +179,9 @@ const ProfessionalSearchDiscovery: React.FC = () => {
       window.clearTimeout(debounceRef.current);
     }
     debounceRef.current = window.setTimeout(() => {
-      if (value.trim()) {
-        const filtered = mockSuggestions.filter((suggestion) =>
-          suggestion.toLowerCase().includes(value.toLowerCase())
-        );
-        setSuggestions(filtered.slice(0, 5));
-        setShowSuggestions(true);
-      } else {
-        setShowSuggestions(false);
-      }
+      // No mock suggestions; hide until backend search exists
+      setSuggestions([]);
+      setShowSuggestions(false);
     }, 300);
   };
 

@@ -46,7 +46,7 @@ const Header: React.FC = () => {
     setIsProfileMenuOpen(!isProfileMenuOpen);
   };
 
-  const { logout } = useAuth();
+  const { logout, session } = useAuth();
   const handleLogout = async () => {
     await logout();
     navigate("/login-register");
@@ -81,7 +81,7 @@ const Header: React.FC = () => {
                 <Icon name="Users" size={20} color="white" />
               </div>
               <span className="font-heading font-semibold text-xl text-primary hidden sm:block">
-                ProRate
+                E-ProRate
               </span>
             </Link>
 
@@ -157,7 +157,7 @@ const Header: React.FC = () => {
                   className="flex items-center space-x-2 p-1 rounded-lg hover:bg-primary-50 transition-smooth"
                 >
                   <Image
-                    src="/assets/images/avatar-placeholder.jpg"
+                    src={session?.user?.avatarUrl ?? ""}
                     alt="Profile"
                     className="w-8 h-8 rounded-full object-cover"
                   />

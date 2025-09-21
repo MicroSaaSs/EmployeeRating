@@ -41,6 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (res.ok) {
           const data = await res.json();
           if (data?.user) {
+            console.log("data", data);
             setSession({
               user: {
                 id: data.user.id,

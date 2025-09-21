@@ -17,6 +17,7 @@ const MyRatingsDashboard: React.FC = () => {
     "all"
   );
 
+  /* Mock removed
   const ratingsGiven = [
     {
       id: 1,
@@ -61,7 +62,10 @@ const MyRatingsDashboard: React.FC = () => {
       canDelete: false,
     },
   ];
+  */
+  const ratingsGiven: any[] = [];
 
+  /* Mock removed
   const ratingsReceived = [
     {
       id: 1,
@@ -108,26 +112,16 @@ const MyRatingsDashboard: React.FC = () => {
       canRespond: true,
     },
   ];
+  */
+  const ratingsReceived: any[] = [];
 
   const analyticsData = {
-    overallRating: 4.7,
-    totalRatingsReceived: 24,
-    totalRatingsGiven: 18,
-    profileViews: 156,
-    ratingTrends: [
-      { month: "Sep", received: 3, given: 2 },
-      { month: "Oct", received: 5, given: 4 },
-      { month: "Nov", received: 8, given: 6 },
-      { month: "Dec", received: 6, given: 4 },
-      { month: "Jan", received: 2, given: 2 },
-    ],
-    categoryBreakdown: [
-      { category: "Technical Skills", rating: 4.8, count: 8 },
-      { category: "Communication", rating: 4.6, count: 6 },
-      { category: "Leadership", rating: 4.7, count: 5 },
-      { category: "Problem Solving", rating: 4.9, count: 3 },
-      { category: "Creativity", rating: 4.5, count: 2 },
-    ],
+    overallRating: 0,
+    totalRatingsReceived: 0,
+    totalRatingsGiven: 0,
+    profileViews: 0,
+    ratingTrends: [],
+    categoryBreakdown: [],
   };
 
   const tabs = [

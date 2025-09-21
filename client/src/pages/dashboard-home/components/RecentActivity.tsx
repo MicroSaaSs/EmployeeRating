@@ -41,36 +41,9 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ refreshing }) => {
   const [filter, setFilter] = useState<"all" | "received" | "given">("all");
   const [hasMore, setHasMore] = useState(true);
 
-  const mockActivities: Activity[] = [
-    {
-      id: 1,
-      type: "rating_received",
-      raterName: "Michael Chen",
-      raterAvatar:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
-      raterTitle: "Engineering Manager at TechCorp",
-      rating: 5,
-      category: "Technical Skills",
-      comment:
-        "Exceptional problem-solving abilities and clean code architecture. Sarah consistently delivers high-quality solutions.",
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-      isNew: true,
-    },
-    {
-      id: 2,
-      type: "rating_given",
-      rateeeName: "Jennifer Rodriguez",
-      rateeAvatar:
-        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face",
-      rateeTitle: "UX Designer at DesignStudio",
-      rating: 4,
-      category: "Collaboration",
-      comment:
-        "Great team player with excellent communication skills. Always willing to help and share knowledge.",
-      timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000),
-      isNew: false,
-    },
-  ];
+  /* Mock removed
+  const mockActivities: Activity[] = [ ... ];
+  */
 
   const filterOptions: Array<{
     value: "all" | "received" | "given";
@@ -88,20 +61,9 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ refreshing }) => {
 
   const loadActivities = async () => {
     setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    let filteredActivities = mockActivities;
-    if (filter === "received") {
-      filteredActivities = mockActivities.filter(
-        (a) => a.type === "rating_received"
-      );
-    } else if (filter === "given") {
-      filteredActivities = mockActivities.filter(
-        (a) => a.type === "rating_given"
-      );
-    }
-
-    setActivities(filteredActivities);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // No mock data; show empty
+    setActivities([]);
     setLoading(false);
   };
 

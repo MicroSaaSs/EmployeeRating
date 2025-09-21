@@ -19,7 +19,7 @@ const people = [
     role: "Senior Software Engineer at TechCorp",
     avatar: "https://randomuser.me/api/portraits/women/32.jpg",
     quote:
-      "ProRate has transformed how I connect with other professionals. The rating system helps me identify top talent for collaborations.",
+      "E-ProRate has transformed how I connect with other professionals. The rating system helps me identify top talent for collaborations.",
   },
   {
     name: "Michael Chen",
@@ -43,7 +43,7 @@ const people = [
     avatar:
       "https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?w=150&h=150&fit=crop&crop=face",
     quote:
-      "ProRate surfaces the soft skills that rarely show up on resumes. It's become part of our hiring signal and mentoring program.",
+      "E-ProRate surfaces the soft skills that rarely show up on resumes. It's become part of our hiring signal and mentoring program.",
   },
 ];
 
@@ -231,7 +231,7 @@ const PageChrome: React.FC<{ children: React.ReactNode }> = ({ children }) => (
         <Link to="/" className="flex items-center gap-3">
           <LogoMark />
           <span className="font-heading font-semibold text-xl text-primary">
-            ProRate
+            E-ProRate
           </span>
         </Link>
         <nav className="hidden sm:flex items-center gap-6 text-sm">
@@ -285,7 +285,7 @@ const PageChrome: React.FC<{ children: React.ReactNode }> = ({ children }) => (
             </span>
           </div>
           <p className="text-text-secondary">
-            © {new Date().getFullYear()} ProRate. All rights reserved.
+            © {new Date().getFullYear()} E-ProRate. All rights reserved.
           </p>
         </div>
       </div>
@@ -394,7 +394,7 @@ const LoginRegister: React.FC = () => {
 
         {/* Minimal legal copy for mobile-only bottom spacing */}
         <p className="mt-10 text-center text-xs text-text-secondary lg:hidden">
-          © {year} ProRate
+          © {year} E-ProRate
         </p>
       </section>
 
