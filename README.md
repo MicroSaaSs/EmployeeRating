@@ -1,6 +1,6 @@
-# ProRate – Employee Rating Service
+# E-ProRate – Employee Rating Service
 
-ProRate is a professional reputation platform — think Glassdoor for people, not companies. It helps professionals discover, rate, and learn about colleagues based on real work experiences.
+E-ProRate is a professional reputation platform. It helps professionals discover, rate, and learn about colleagues based on real work experiences.
 
 - **LinkedIn-anchored identities**: authenticate/verify profiles using LinkedIn data (client stubs now).
 - **Anonymous or identified ratings**: privacy-first submission with optional identity reveal.

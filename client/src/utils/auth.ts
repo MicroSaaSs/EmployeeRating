@@ -30,38 +30,20 @@ export const authStorage = {
 };
 
 export const getApiBaseUrl = () =>
-  (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:4000";
+  (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:3000";
 
 export const startLinkedInLogin = () => {
   const base = getApiBaseUrl();
-  const redirectUri = encodeURIComponent(
-    window.location.origin + "/auth/callback"
-  );
-  window.location.href = `${base}/auth/linkedin/start?redirect_uri=${redirectUri}`;
+  // Passport strategy uses server-side configured callback; no need to pass redirect_uri
+  window.location.href = `${base}/auth/linkedin/start`;
 };
 
+// Not needed with redirect-based Passport flow; kept for future popup/XHR approach
 export const exchangeCodeForSession = async (
-  code: string,
-  state?: string
+  _code: string,
+  _state?: string
 ): Promise<Session> => {
-  const base = getApiBaseUrl();
-  const resp = await fetch(`${base}/auth/linkedin/callback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      code,
-      state,
-      redirectUri: window.location.origin + "/auth/callback",
-    }),
-    credentials: "include",
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(text || "Failed to authenticate with LinkedIn");
-  }
-  const session = (await resp.json()) as Session;
-  authStorage.save(session);
-  return session;
+  throw new Error("Not used: server redirects after callback and sets cookie");
 };
 
 export const logoutSession = async () => {

@@ -6,7 +6,12 @@ import React, {
   useState,
 } from "react";
 import type { Session } from "../utils/auth";
-import { authStorage, logoutSession, startLinkedInLogin } from "../utils/auth";
+import {
+  authStorage,
+  logoutSession,
+  startLinkedInLogin,
+  getApiBaseUrl,
+} from "../utils/auth";
 
 type AuthContextValue = {
   session: Session | null;
@@ -27,7 +32,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     const stored = authStorage.load();
     if (stored) setSession(stored);
-    setIsLoading(false);
+    // also try to hydrate from server cookie session
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/auth/session`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.user) {
+            setSession({
+              user: {
+                id: data.user.id,
+                name: `${data.user.firstName || ""} ${
+                  data.user.lastName || ""
+                }`.trim(),
+                avatarUrl: data.user.avatar,
+              },
+              accessToken: "",
+            });
+            authStorage.save({
+              user: {
+                id: data.user.id,
+                name: `${data.user.firstName || ""} ${
+                  data.user.lastName || ""
+                }`.trim(),
+                avatarUrl: data.user.avatar,
+              },
+              accessToken: "",
+            });
+          }
+        }
+      } catch {}
+      setIsLoading(false);
+    })();
   }, []);
 
   const loginWithLinkedIn = () => startLinkedInLogin();
