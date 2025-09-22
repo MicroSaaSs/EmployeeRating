@@ -7,6 +7,10 @@ type UserStats = {
   ratingsReceived: number;
   profileViews: number;
   reputationScore: number;
+  weeklyGivenDelta?: number;
+  weeklyReceivedDelta?: number;
+  weeklyViewsDelta?: number;
+  recentAchievementText?: string;
 };
 
 type PersonalStatsProps = {
@@ -26,8 +30,8 @@ const PersonalStats: React.FC<PersonalStatsProps> = ({
     icon: IconName;
     color: string;
     bgColor: string;
-    change: string;
-    changeType: "positive" | "negative";
+    change?: string;
+    changeType?: "positive" | "negative";
   }> = [
     {
       label: "Ratings Given",
@@ -35,8 +39,13 @@ const PersonalStats: React.FC<PersonalStatsProps> = ({
       icon: "ArrowUp",
       color: "text-success",
       bgColor: "bg-success-50",
-      change: "+3 this week",
-      changeType: "positive",
+      change:
+        typeof user.weeklyGivenDelta === "number"
+          ? `${user.weeklyGivenDelta >= 0 ? "+" : ""}${
+              user.weeklyGivenDelta
+            } this week`
+          : undefined,
+      changeType: (user.weeklyGivenDelta ?? 0) >= 0 ? "positive" : "negative",
     },
     {
       label: "Ratings Received",
@@ -44,8 +53,14 @@ const PersonalStats: React.FC<PersonalStatsProps> = ({
       icon: "ArrowDown",
       color: "text-primary",
       bgColor: "bg-primary-50",
-      change: "+2 this week",
-      changeType: "positive",
+      change:
+        typeof user.weeklyReceivedDelta === "number"
+          ? `${user.weeklyReceivedDelta >= 0 ? "+" : ""}${
+              user.weeklyReceivedDelta
+            } this week`
+          : undefined,
+      changeType:
+        (user.weeklyReceivedDelta ?? 0) >= 0 ? "positive" : "negative",
     },
     {
       label: "Profile Views",
@@ -53,8 +68,13 @@ const PersonalStats: React.FC<PersonalStatsProps> = ({
       icon: "Eye",
       color: "text-secondary",
       bgColor: "bg-secondary-50",
-      change: "+12 this week",
-      changeType: "positive",
+      change:
+        typeof user.weeklyViewsDelta === "number"
+          ? `${user.weeklyViewsDelta >= 0 ? "+" : ""}${
+              user.weeklyViewsDelta
+            } this week`
+          : undefined,
+      changeType: (user.weeklyViewsDelta ?? 0) >= 0 ? "positive" : "negative",
     },
   ];
 
@@ -139,15 +159,17 @@ const PersonalStats: React.FC<PersonalStatsProps> = ({
                     <p className="text-sm font-medium text-text-primary">
                       {stat.label}
                     </p>
-                    <p
-                      className={`text-xs ${
-                        stat.changeType === "positive"
-                          ? "text-success"
-                          : "text-error"
-                      }`}
-                    >
-                      {stat.change}
-                    </p>
+                    {stat.change && (
+                      <p
+                        className={`text-xs ${
+                          stat.changeType === "positive"
+                            ? "text-success"
+                            : "text-error"
+                        }`}
+                      >
+                        {stat.change}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="text-right">
@@ -159,22 +181,23 @@ const PersonalStats: React.FC<PersonalStatsProps> = ({
             ))}
           </div>
 
-          <div className="bg-gradient-to-r from-primary-50 to-secondary-50 rounded-lg p-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
-                <Icon name="Award" size={16} color="white" />
-              </div>
-              <div>
-                <h3 className="font-medium text-text-primary mb-1">
-                  Recent Achievement
-                </h3>
-                <p className="text-sm text-text-secondary">
-                  You've received 5 new ratings this month! Keep up the great
-                  work.
-                </p>
+          {user.recentAchievementText && (
+            <div className="bg-gradient-to-r from-primary-50 to-secondary-50 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
+                  <Icon name="Award" size={16} color="white" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-text-primary mb-1">
+                    Recent Achievement
+                  </h3>
+                  <p className="text-sm text-text-secondary">
+                    {user.recentAchievementText}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="space-y-3">
             <Link

@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Header from "../../components/ui/Header";
 import Icon from "../../components/AppIcon";
-
+import { getApiBaseUrl } from "../../utils/auth";
 import RatingsGivenTab from "./components/RatingsGivenTab";
 import RatingsReceivedTab from "./components/RatingsReceivedTab";
 import AnalyticsTab from "./components/AnalyticsTab";
@@ -17,103 +17,8 @@ const MyRatingsDashboard: React.FC = () => {
     "all"
   );
 
-  /* Mock removed
-  const ratingsGiven = [
-    {
-      id: 1,
-      professionalName: "Sarah Johnson",
-      professionalTitle: "Senior Software Engineer",
-      company: "TechCorp Inc.",
-      avatar: "https://randomuser.me/api/portraits/women/32.jpg",
-      rating: 4.5,
-      category: "Technical Skills",
-      comment:
-        "Sarah demonstrated exceptional problem-solving abilities during our collaboration on the e-commerce platform project. Her expertise in React and Node.js was evident throughout the development process.\n\nShe consistently delivered high-quality code and was always willing to help team members when they encountered challenges.",
-      submittedDate: new Date("2024-01-15"),
-      canEdit: true,
-      canDelete: true,
-    },
-    {
-      id: 2,
-      professionalName: "Michael Chen",
-      professionalTitle: "Product Manager",
-      company: "InnovateLab",
-      avatar: "https://randomuser.me/api/portraits/men/45.jpg",
-      rating: 5.0,
-      category: "Leadership",
-      comment:
-        "Michael's leadership during the product launch was outstanding. He effectively coordinated between different teams and ensured all stakeholders were aligned with the project goals.\n\nHis strategic thinking and communication skills made the entire process smooth and successful.",
-      submittedDate: new Date("2024-01-10"),
-      canEdit: true,
-      canDelete: false,
-    },
-    {
-      id: 3,
-      professionalName: "Emily Rodriguez",
-      professionalTitle: "UX Designer",
-      company: "DesignStudio",
-      avatar: "https://randomuser.me/api/portraits/women/28.jpg",
-      rating: 4.8,
-      category: "Creativity",
-      comment:
-        "Emily's design work on our mobile app was exceptional. She has a great eye for user experience and created intuitive interfaces that significantly improved user engagement.\n\nHer attention to detail and ability to translate complex requirements into simple, elegant designs is remarkable.",
-      submittedDate: new Date("2024-01-05"),
-      canEdit: false,
-      canDelete: false,
-    },
-  ];
-  */
-  const ratingsGiven: any[] = [];
-
-  /* Mock removed
-  const ratingsReceived = [
-    {
-      id: 1,
-      raterName: "David Wilson",
-      raterTitle: "Engineering Manager",
-      company: "TechFlow Solutions",
-      avatar: "https://randomuser.me/api/portraits/men/52.jpg",
-      rating: 4.7,
-      category: "Technical Skills",
-      comment:
-        "Excellent collaboration on the API integration project. Strong technical skills and great communication throughout the development process.\n\nAlways delivered on time and provided valuable insights during code reviews.",
-      receivedDate: new Date("2024-01-12"),
-      hasResponded: false,
-      canRespond: true,
-    },
-    {
-      id: 2,
-      raterName: "Lisa Thompson",
-      raterTitle: "Senior Developer",
-      company: "CodeCraft Inc.",
-      avatar: "https://randomuser.me/api/portraits/women/38.jpg",
-      rating: 5.0,
-      category: "Problem Solving",
-      comment:
-        "Outstanding problem-solving abilities. Helped resolve critical issues in our production environment with innovative solutions.\n\nA true professional who goes above and beyond to ensure project success.",
-      receivedDate: new Date("2024-01-08"),
-      hasResponded: true,
-      canRespond: false,
-      response:
-        "Thank you for the kind words, Lisa! It was a pleasure working with you on that challenging project.",
-    },
-    {
-      id: 3,
-      raterName: "James Martinez",
-      raterTitle: "Project Lead",
-      company: "AgileWorks",
-      avatar: "https://randomuser.me/api/portraits/men/41.jpg",
-      rating: 4.6,
-      category: "Communication",
-      comment:
-        "Great communication skills and team collaboration. Made significant contributions to our agile development process.\n\nAlways prepared for meetings and provided clear updates on project progress.",
-      receivedDate: new Date("2024-01-03"),
-      hasResponded: false,
-      canRespond: true,
-    },
-  ];
-  */
-  const ratingsReceived: any[] = [];
+  const [ratingsGiven, setRatingsGiven] = useState<any[]>([]);
+  const [ratingsReceived, setRatingsReceived] = useState<any[]>([]);
 
   const analyticsData = {
     overallRating: 0,
@@ -122,6 +27,111 @@ const MyRatingsDashboard: React.FC = () => {
     profileViews: 0,
     ratingTrends: [],
     categoryBreakdown: [],
+  };
+
+  const reloadRatings = async () => {
+    try {
+      // Load professionals for enrichment
+      const profRes = await fetch(`${getApiBaseUrl()}/users/search`, {
+        credentials: "include",
+      });
+      const profData = await profRes.json();
+      const professionals = (profData?.professionals || []) as Array<{
+        id: number;
+        name: string;
+        title: string;
+        company: string;
+        avatar: string;
+      }>;
+      const byId = new Map<number, any>();
+      professionals.forEach((p) => byId.set(p.id, p));
+
+      // Load ratings given
+      const givenRes = await fetch(`${getApiBaseUrl()}/ratings/given`, {
+        credentials: "include",
+      });
+      const givenData = await givenRes.json();
+      const given = ((givenData?.ratings || []) as any[]).map((r) => {
+        const targetId = Number(r.targetUserId);
+        const prof = byId.get(targetId);
+        return {
+          id: r.id,
+          professionalName: prof?.name || `User ${r.targetUserId}`,
+          professionalTitle: prof?.title || "",
+          company: prof?.company || "",
+          avatar: prof?.avatar || "/assets/images/no_image.png",
+          rating: r.score,
+          category: r.category || "Overall",
+          comment: r.comment || "",
+          submittedDate: new Date(r.createdAt),
+          canEdit: true,
+          canDelete: false,
+        };
+      });
+      setRatingsGiven(given);
+
+      // Load ratings received
+      const recRes = await fetch(`${getApiBaseUrl()}/ratings/received`, {
+        credentials: "include",
+      });
+      const recData = await recRes.json();
+      const received = ((recData?.ratings || []) as any[]).map((r) => {
+        const raterId = Number(r.raterUserId);
+        const prof = byId.get(raterId);
+        return {
+          id: r.id,
+          raterName: prof?.name || `User ${r.raterUserId}`,
+          raterTitle: prof?.title || "",
+          company: prof?.company || "",
+          avatar: prof?.avatar || "/assets/images/no_image.png",
+          rating: r.score,
+          category: r.category || "Overall",
+          comment: r.comment || "",
+          receivedDate: new Date(r.createdAt),
+          hasResponded: false,
+          canRespond: true,
+        };
+      });
+      setRatingsReceived(received);
+    } catch (e) {
+      setRatingsGiven([]);
+      setRatingsReceived([]);
+    }
+  };
+
+  useEffect(() => {
+    reloadRatings();
+  }, []);
+
+  const handleDeleteRatings = async (ids: Array<string | number>) => {
+    try {
+      await Promise.all(
+        ids.map((id) =>
+          fetch(`${getApiBaseUrl()}/ratings/${id}`, {
+            method: "DELETE",
+            credentials: "include",
+          })
+        )
+      );
+    } finally {
+      reloadRatings();
+    }
+  };
+
+  const handleUpdateRating = async (
+    id: string | number,
+    payload: { score?: number; comment?: string; category?: string }
+  ) => {
+    try {
+      await fetch(`${getApiBaseUrl()}/ratings/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+    } finally {
+      reloadRatings();
+    }
   };
 
   const tabs = [
@@ -381,7 +391,11 @@ const MyRatingsDashboard: React.FC = () => {
 
             <div className="p-6">
               {activeTab === "given" && (
-                <RatingsGivenTab ratings={filteredData as any} />
+                <RatingsGivenTab
+                  ratings={filteredData as any}
+                  onDelete={handleDeleteRatings}
+                  onUpdate={handleUpdateRating}
+                />
               )}
               {activeTab === "received" && (
                 <RatingsReceivedTab ratings={filteredData as any} />

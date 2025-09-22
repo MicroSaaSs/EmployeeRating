@@ -7,6 +7,7 @@ import SearchFilters from "./components/SearchFilters";
 import ProfessionalCard from "./components/ProfessionalCard";
 import MapView from "./components/MapView";
 import SearchHistory from "./components/SearchHistory";
+import { getApiBaseUrl } from "../../utils/auth";
 
 export type Professional = {
   id: number;
@@ -86,9 +87,25 @@ const ProfessionalSearchDiscovery: React.FC = () => {
   ];
 
   useEffect(() => {
-    // No mock data; leave empty until API is wired
-    setProfessionals([]);
-    setFilteredProfessionals([]);
+    const init = async () => {
+      try {
+        setIsLoading(true);
+        const res = await fetch(`${getApiBaseUrl()}/users/search`, {
+          credentials: "include",
+        });
+        const data = await res.json();
+        const list = (data?.professionals || []) as Professional[];
+        setProfessionals(list);
+        setFilteredProfessionals(list);
+      } catch (e) {
+        console.error(e);
+        setProfessionals([]);
+        setFilteredProfessionals([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    init();
     const savedHistory = localStorage.getItem("searchHistory");
     if (savedHistory) {
       setSearchHistory(JSON.parse(savedHistory));
@@ -179,18 +196,43 @@ const ProfessionalSearchDiscovery: React.FC = () => {
       window.clearTimeout(debounceRef.current);
     }
     debounceRef.current = window.setTimeout(() => {
-      // No mock suggestions; hide until backend search exists
-      setSuggestions([]);
-      setShowSuggestions(false);
+      const fetchSuggestions = async () => {
+        if (!value.trim()) {
+          setSuggestions([]);
+          setShowSuggestions(false);
+          return;
+        }
+        try {
+          const res = await fetch(
+            `${getApiBaseUrl()}/users/suggestions?q=${encodeURIComponent(
+              value
+            )}`,
+            { credentials: "include" }
+          );
+          const data = await res.json();
+          const suggestions = (data?.suggestions || []) as string[];
+          setSuggestions(suggestions);
+          setShowSuggestions(suggestions.length > 0);
+        } catch (e) {
+          console.error(e);
+          setSuggestions([]);
+          setShowSuggestions(false);
+        }
+      };
+      fetchSuggestions();
     }, 300);
   };
 
   const handleProfessionalClick = (professional: Professional) => {
-    navigate("/professional-profile", { state: { professional } });
+    navigate(`/professional-profile?id=${professional.id}`);
   };
 
   const handleRateProfessional = (professional: Professional) => {
-    navigate("/rate-professional", { state: { professional } });
+    navigate(
+      `/rate-professional?id=${professional.id}&name=${encodeURIComponent(
+        professional.name
+      )}`
+    );
   };
 
   const clearFilters = () => {
@@ -236,9 +278,9 @@ const ProfessionalSearchDiscovery: React.FC = () => {
             </div>
             {showSuggestions && suggestions.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-modal z-50">
-                {suggestions.map((suggestion, index) => (
+                {suggestions.map((suggestion) => (
                   <button
-                    key={index}
+                    key={suggestion}
                     onClick={() => handleSearch(suggestion)}
                     className="w-full text-left px-4 py-3 hover:bg-primary-50 transition-smooth border-b border-border last:border-b-0"
                   >
@@ -299,9 +341,9 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                 </div>
                 {showSuggestions && suggestions.length > 0 && (
                   <div className="absolute top_full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-modal z-50">
-                    {suggestions.map((suggestion, index) => (
+                    {suggestions.map((suggestion) => (
                       <button
-                        key={index}
+                        key={suggestion}
                         onClick={() => handleSearch(suggestion)}
                         className="w-full text-left px-4 py-3 hover:bg-primary-50 transition-smooth border-b border-border last:border-b-0"
                       >
@@ -419,10 +461,10 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                 />
               ) : (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] items-stretch gap-3 p-4">
-                  {isLoading ? (
-                    Array.from({ length: 6 }).map((_, index) => (
+                  {isLoading &&
+                    [0, 1, 2, 3, 4, 5].map((id) => (
                       <div
-                        key={index}
+                        key={`skeleton-${id}`}
                         className="bg-surface rounded-lg border border-border p-6 animate-pulse"
                       >
                         <div className="flex items-center space-x-4 mb-4">
@@ -437,8 +479,10 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                           <div className="h-3 bg-gray-200 rounded w-2/3"></div>
                         </div>
                       </div>
-                    ))
-                  ) : filteredProfessionals.length > 0 ? (
+                    ))}
+
+                  {!isLoading &&
+                    filteredProfessionals.length > 0 &&
                     filteredProfessionals.map((professional) => (
                       <ProfessionalCard
                         key={professional.id}
@@ -447,8 +491,9 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                         onRate={() => handleRateProfessional(professional)}
                         onPreview={setSelectedProfessional as any}
                       />
-                    ))
-                  ) : (
+                    ))}
+
+                  {!isLoading && filteredProfessionals.length === 0 && (
                     <div className="col-span-full text-center py-12">
                       <div className="w-24 h-24 bg-primary-50 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Icon
@@ -511,7 +556,7 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                       <div className="flex items-center">
                         {Array.from({ length: 5 }).map((_, i) => (
                           <Icon
-                            key={i}
+                            key={`star-${selectedProfessional.id}-${i}`}
                             name="Star"
                             size={16}
                             className={
@@ -556,9 +601,9 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                       <div className="flex flex-wrap gap-2">
                         {selectedProfessional.skills
                           .slice(0, 4)
-                          .map((skill, index) => (
+                          .map((skill) => (
                             <span
-                              key={index}
+                              key={skill}
                               className="px-2 py-1 bg-primary-50 text-primary text-xs rounded-full"
                             >
                               {skill}
@@ -576,15 +621,15 @@ const ProfessionalSearchDiscovery: React.FC = () => {
                           <div className="space-y-2">
                             {selectedProfessional.recentRatings
                               .slice(0, 2)
-                              .map((review, index) => (
+                              .map((review) => (
                                 <div
-                                  key={index}
+                                  key={`${review.date}-${review.comment}`}
                                   className="flex items-start space-x-2"
                                 >
                                   <div className="flex items-center">
                                     {Array.from({ length: 5 }).map((_, i) => (
                                       <Icon
-                                        key={i}
+                                        key={`review-star-${review.date}-${i}`}
                                         name="Star"
                                         size={12}
                                         className={

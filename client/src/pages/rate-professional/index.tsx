@@ -1,9 +1,10 @@
 // Converted from JSX to TSX (kept logic, added minimal types)
 import React, { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import Header from "../../components/ui/Header";
 import Icon from "../../components/AppIcon";
 import Image from "../../components/AppImage";
+import { getApiBaseUrl } from "../../utils/auth";
 import {
   verifyCompanyEligibility,
   extractCompaniesFromExperience,
@@ -27,23 +28,11 @@ type LocationState = { professional?: ProfessionalData };
 const RateProfessional: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const locState = location.state as LocationState | undefined;
 
-  const professionalData: ProfessionalData = locState?.professional || {
-    id: 1,
-    name: "Sarah Johnson",
-    title: "Senior Software Engineer",
-    company: "TechCorp Solutions",
-    avatar:
-      "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=400&h=400&fit=crop&crop=face",
-    location: "San Francisco, CA",
-    experience: "8+ years",
-    experienceHistory: [
-      { company: "TechCorp Solutions", duration: "2021 - Present" },
-      { company: "StartupXYZ", duration: "2019 - 2021" },
-      { company: "WebDev Agency", duration: "2018 - 2019" },
-    ],
-  };
+  const [professionalData, setProfessionalData] =
+    useState<ProfessionalData | null>(locState?.professional || null);
 
   const currentUserCompanies: ExperienceHistoryItem[] = [
     { company: "TechCorp Solutions", duration: "2022 - Present" },
@@ -81,8 +70,38 @@ const RateProfessional: React.FC = () => {
   const maxFeedbackLength = 1000;
 
   useEffect(() => {
+    const id = searchParams.get("id");
+    const ensureProfessional = async () => {
+      if (!professionalData && id) {
+        try {
+          const res = await fetch(`${getApiBaseUrl()}/users/profile/${id}`, {
+            credentials: "include",
+          });
+          const data = await res.json();
+          const p = data?.profile;
+          if (p) {
+            setProfessionalData({
+              id: p.id,
+              name: p.name || "",
+              title: p.title || "",
+              company: p.company || "",
+              avatar:
+                p.avatar || p.profileImage || "/assets/images/no_image.png",
+              location: p.location || "",
+              experience: "",
+              experienceHistory: [],
+            });
+          }
+        } catch {}
+      }
+    };
+    ensureProfessional();
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!professionalData) return;
     const professionalCompanies = extractCompaniesFromExperience(
-      professionalData.experienceHistory
+      professionalData.experienceHistory || []
     );
     const raterCompanies = extractCompaniesFromExperience(currentUserCompanies);
     const result = verifyCompanyEligibility(
@@ -91,7 +110,7 @@ const RateProfessional: React.FC = () => {
     );
     setVerificationResult(result);
     setIsEligible(result.isEligible);
-  }, []);
+  }, [professionalData]);
 
   const ratingCategories = [
     {
@@ -176,7 +195,7 @@ const RateProfessional: React.FC = () => {
             Verifying Eligibility
           </h3>
           <p className="text-text-secondary">
-            Checking your company history with {professionalData.name}...
+            Checking your company history with {professionalData?.name}...
           </p>
         </div>
       );
@@ -356,7 +375,7 @@ const RateProfessional: React.FC = () => {
     setFormData((prev) => ({ ...prev, isDraft: true }));
     localStorage.setItem(
       "ratingDraft",
-      JSON.stringify({ ...formData, professionalId: professionalData.id })
+      JSON.stringify({ ...formData, professionalId: professionalData?.id })
     );
     navigate("/my-ratings-dashboard");
   };
@@ -383,22 +402,22 @@ const RateProfessional: React.FC = () => {
       return;
     }
     setIsSubmitting(true);
-    const submissionData = {
-      ...formData,
-      professionalId: professionalData.id,
-      isAnonymous: formData.isAnonymous,
-      verificationResult,
-      submittedAt: new Date().toISOString(),
-    };
-    console.log(
-      formData.isAnonymous
-        ? "Anonymous rating submitted:"
-        : "Identified rating submitted:",
-      submissionData
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    setIsSubmitting(false);
-    setShowSuccess(true);
+    try {
+      await fetch(`${getApiBaseUrl()}/ratings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          targetUserId: String(professionalData?.id),
+          score: formData.overallRating,
+          category: "overall",
+          comment: formData.writtenFeedback,
+        }),
+      });
+      setShowSuccess(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCancel = () => {
@@ -440,17 +459,20 @@ const RateProfessional: React.FC = () => {
       <div className="bg-surface border border-border rounded-lg p-6 mb-8">
         <div className="flex items-center space-x-4">
           <Image
-            src={professionalData.avatar}
-            alt={professionalData.name}
+            src={professionalData?.avatar || "/assets/images/no_image.png"}
+            alt={professionalData?.name || "Profile"}
             className="w-16 h-16 rounded-full object-cover"
           />
           <div className="flex-1">
             <h2 className="text-xl font-semibold text-text-primary">
-              {professionalData.name}
+              {professionalData?.name || "Professional"}
             </h2>
-            <p className="text-text-secondary">{professionalData.title}</p>
+            <p className="text-text-secondary">
+              {professionalData?.title || ""}
+            </p>
             <p className="text-sm text-text-secondary">
-              {professionalData.company} • {professionalData.location}
+              {professionalData?.company || ""} •{" "}
+              {professionalData?.location || ""}
             </p>
           </div>
           <div className="text-right">
@@ -513,7 +535,8 @@ const RateProfessional: React.FC = () => {
           Overall Rating
         </h3>
         <p className="text-text-secondary mb-4">
-          How would you rate {professionalData.name} overall?
+          How would you rate {professionalData?.name || "this professional"}{" "}
+          overall?
         </p>
         <div className="flex items-center space-x-4">
           <StarRating
@@ -600,7 +623,7 @@ const RateProfessional: React.FC = () => {
         </h3>
         <p className="text-text-secondary mb-4">
           Provide detailed feedback about your experience working with{" "}
-          {professionalData.name}
+          {professionalData?.name}
         </p>
       </div>
       <div>
@@ -938,7 +961,7 @@ const RateProfessional: React.FC = () => {
                 {formData.isAnonymous
                   ? "Thank you for providing anonymous feedback about "
                   : "Thank you for providing feedback about "}
-                {professionalData.name}.
+                {professionalData?.name}.
               </p>
               {formData.isAnonymous && (
                 <div className="bg-success-50 border border-success-200 rounded-lg p-4 mb-8">

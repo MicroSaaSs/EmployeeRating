@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../../../components/AppIcon";
 import Image from "../../../components/AppImage";
+import { getApiBaseUrl } from "../../../utils/auth";
 
 type ActivityReceived = {
   id: number;
@@ -60,11 +61,29 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ refreshing }) => {
   }, [filter, refreshing]);
 
   const loadActivities = async () => {
-    setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    // No mock data; show empty
-    setActivities([]);
-    setLoading(false);
+    try {
+      setLoading(true);
+      const res = await fetch(
+        `${getApiBaseUrl()}/users/activities?filter=${encodeURIComponent(
+          filter
+        )}`,
+        { credentials: "include" }
+      );
+      const data = await res.json();
+      const list = (data?.activities || []).map((a: any) => ({
+        ...a,
+        timestamp: new Date(
+          typeof a.timestamp === "number" ? a.timestamp : Date.now()
+        ),
+      }));
+      setActivities(list);
+      setHasMore(false);
+    } catch (e) {
+      setActivities([]);
+      setHasMore(false);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadMore = () => {

@@ -17,9 +17,20 @@ type RatingGiven = {
   canDelete: boolean;
 };
 
-type RatingsGivenTabProps = { ratings: RatingGiven[] };
+type RatingsGivenTabProps = {
+  ratings: RatingGiven[];
+  onDelete?: (ids: Array<number | string>) => void;
+  onUpdate?: (
+    id: number | string,
+    payload: { score?: number; comment?: string; category?: string }
+  ) => void;
+};
 
-const RatingsGivenTab: React.FC<RatingsGivenTabProps> = ({ ratings }) => {
+const RatingsGivenTab: React.FC<RatingsGivenTabProps> = ({
+  ratings,
+  onDelete,
+  onUpdate,
+}) => {
   const [selectedRatings, setSelectedRatings] = useState<
     Array<number | string>
   >([]);
@@ -51,6 +62,7 @@ const RatingsGivenTab: React.FC<RatingsGivenTabProps> = ({ ratings }) => {
         `Are you sure you want to delete ${selectedRatings.length} rating(s)?`
       )
     ) {
+      onDelete?.(selectedRatings);
       setSelectedRatings([]);
       setShowBulkActions(false);
     }
@@ -232,7 +244,10 @@ const RatingsGivenTab: React.FC<RatingsGivenTabProps> = ({ ratings }) => {
                       </button>
                     )}
                     {rating.canDelete && (
-                      <button className="flex items-center gap-1 px-3 py-1.5 text-sm text-error hover:bg-error-50 rounded-lg transition-smooth">
+                      <button
+                        onClick={() => onDelete?.([rating.id])}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-error hover:bg-error-50 rounded-lg transition-smooth"
+                      >
                         <Icon name="Trash2" size={14} />
                         Delete
                       </button>

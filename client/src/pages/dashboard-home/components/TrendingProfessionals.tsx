@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../../../components/AppIcon";
 import Image from "../../../components/AppImage";
+import { getApiBaseUrl } from "../../../utils/auth";
 
 type Professional = {
   id: number;
@@ -31,10 +32,19 @@ const TrendingProfessionals: React.FC = () => {
   }, []);
 
   const loadTrendingProfessionals = async () => {
-    setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    setProfessionals([]);
-    setLoading(false);
+    try {
+      setLoading(true);
+      const res = await fetch(`${getApiBaseUrl()}/users/trending`, {
+        credentials: "include",
+      });
+      const data = await res.json();
+      const professionals = (data?.professionals || []) as Professional[];
+      setProfessionals(professionals);
+    } catch (e) {
+      setProfessionals([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderStars = (rating: number) => {
@@ -138,7 +148,7 @@ const TrendingProfessionals: React.FC = () => {
               {visibleProfessionals.map((professional) => (
                 <Link
                   key={professional.id}
-                  to="/professional-profile"
+                  to={`/professional-profile?id=${professional.id}`}
                   className="bg-background rounded-lg p-4 hover:shadow-card transition-smooth border border-transparent hover:border-primary-200"
                 >
                   <div className="flex items-start space-x-3 mb-4">
@@ -204,7 +214,7 @@ const TrendingProfessionals: React.FC = () => {
                 {professionals.map((professional) => (
                   <Link
                     key={professional.id}
-                    to="/professional-profile"
+                    to={`/professional-profile?id=${professional.id}`}
                     className="flex-none w-72 bg-background rounded-lg p-4 hover:shadow-card transition-smooth border border-transparent hover:border-primary-200"
                   >
                     <div className="flex items-start space-x-3 mb-4">

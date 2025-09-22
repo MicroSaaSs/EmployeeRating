@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 
 import Header from "../../components/ui/Header";
 import Icon from "../../components/AppIcon";
+import { getApiBaseUrl } from "../../utils/auth";
 
 import RecentActivity from "./components/RecentActivity";
 import TrendingProfessionals from "./components/TrendingProfessionals";
@@ -11,29 +12,54 @@ import PersonalStats from "./components/PersonalStats";
 const DashboardHome: React.FC = () => {
   const [isStatsCollapsed, setIsStatsCollapsed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [userName, setUserName] = useState<string>("there");
+  const [stats, setStats] = useState({
+    ratingsGiven: 0,
+    ratingsReceived: 0,
+    profileViews: 0,
+    reputationScore: 0,
+  });
 
-  const currentUser = {
-    name: "Sarah Johnson",
-    title: "Senior Product Manager",
-    avatar:
-      "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
-    ratingsGiven: 47,
-    ratingsReceived: 23,
-    profileViews: 156,
-    reputationScore: 4.7,
+  const loadDashboard = async () => {
+    try {
+      // Load current user and ratings given
+      const meRes = await fetch(`${getApiBaseUrl()}/users/me`, {
+        credentials: "include",
+      });
+      if (meRes.ok) {
+        const me = await meRes.json();
+        const u = me?.user;
+        const given = Array.isArray(me?.ratingsGiven)
+          ? me.ratingsGiven.length
+          : 0;
+        const fullName = [u?.firstName, u?.lastName].filter(Boolean).join(" ");
+        setUserName(fullName || "there");
+        setStats((s) => ({ ...s, ratingsGiven: given }));
+      }
+      // Load ratings received
+      const recRes = await fetch(`${getApiBaseUrl()}/ratings/received`, {
+        credentials: "include",
+      });
+      if (recRes.ok) {
+        const rec = await recRes.json();
+        const receivedCount = Array.isArray(rec?.ratings)
+          ? rec.ratings.length
+          : 0;
+        setStats((s) => ({ ...s, ratingsReceived: receivedCount }));
+      }
+    } catch {
+      // leave defaults on failure
+    }
   };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await loadDashboard();
     setRefreshing(false);
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // Data loaded
-    }, 500);
-    return () => clearTimeout(timer);
+    loadDashboard();
   }, []);
 
   return (
@@ -46,7 +72,7 @@ const DashboardHome: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold text-text-primary">
-                  Welcome back, {currentUser.name}
+                  Welcome back, {userName}
                 </h1>
                 <p className="text-text-secondary mt-1">
                   Here's what's happening in your professional network
@@ -78,7 +104,7 @@ const DashboardHome: React.FC = () => {
             <div className="lg:col-span-4">
               <div className="sticky top-24">
                 <PersonalStats
-                  user={currentUser}
+                  user={stats}
                   isCollapsed={isStatsCollapsed}
                   onToggleCollapse={() =>
                     setIsStatsCollapsed(!isStatsCollapsed)
@@ -93,7 +119,7 @@ const DashboardHome: React.FC = () => {
 
             <div className="md:hidden">
               <PersonalStats
-                user={currentUser}
+                user={stats}
                 isCollapsed={isStatsCollapsed}
                 onToggleCollapse={() => setIsStatsCollapsed(!isStatsCollapsed)}
               />
@@ -104,7 +130,7 @@ const DashboardHome: React.FC = () => {
 
             <div className="hidden md:block lg:hidden">
               <PersonalStats
-                user={currentUser}
+                user={stats}
                 isCollapsed={false}
                 onToggleCollapse={() => {}}
               />
