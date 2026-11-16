@@ -1,9 +1,11 @@
-import { Injectable } from "@nestjs/common";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { Injectable, Logger } from "@nestjs/common";
+import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 import { linkedInConfig } from "../config";
 
-const issuer = "https://www.linkedin.com";
-const keys = createRemoteJWKSet(new URL(issuer + "/oauth/openid/jwks"), { timeoutDuration: 5000 });
+const linkedInOrigin = "https://www.linkedin.com";
+// Use the issuer from LinkedIn's OpenID configuration, which includes the /oauth path.
+const issuer = linkedInOrigin + "/oauth";
+const keys = createRemoteJWKSet(new URL("/oauth/openid/jwks", linkedInOrigin), { timeoutDuration: 5000 });
 
 export interface MemberIdentity {
   issuer: string;
@@ -13,9 +15,11 @@ export interface MemberIdentity {
 
 @Injectable()
 export class LinkedInService {
+  private readonly logger = new Logger(LinkedInService.name);
+
   authorizationUrl(state: string) {
     const { clientId, redirectUri } = linkedInConfig();
-    const url = new URL("/oauth/v2/authorization", issuer);
+    const url = new URL("/oauth/v2/authorization", linkedInOrigin);
     url.search = new URLSearchParams({
       response_type: "code",
       client_id: clientId,
@@ -28,7 +32,7 @@ export class LinkedInService {
 
   async verify(code: string): Promise<MemberIdentity> {
     const { clientId, clientSecret, redirectUri } = linkedInConfig();
-    const response = await fetch(new URL("/oauth/v2/accessToken", issuer), {
+    const response = await fetch(new URL("/oauth/v2/accessToken", linkedInOrigin), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       redirect: "error",
@@ -41,7 +45,10 @@ export class LinkedInService {
         code,
       }),
     });
-    if (!response.ok) throw new Error("LinkedIn token exchange failed");
+    if (!response.ok) {
+      this.logger.warn(`LinkedIn token endpoint returned HTTP ${response.status}`);
+      throw new Error("LinkedIn token exchange failed");
+    }
     const { id_token } = await response.json() as { id_token?: unknown };
     if (typeof id_token !== "string") throw new Error("LinkedIn did not return an ID token");
 
@@ -52,6 +59,10 @@ export class LinkedInService {
       requiredClaims: ["sub", "iat", "exp"],
       maxTokenAge: "10 minutes",
       clockTolerance: 30,
+    }).catch((error: unknown) => {
+      const reason = error instanceof errors.JOSEError ? error.code : "verification error";
+      this.logger.warn(`LinkedIn ID token validation failed (${reason})`);
+      throw error;
     });
     if (!payload.sub || (Array.isArray(payload.aud) && payload.aud.length > 1)) {
       throw new Error("LinkedIn token did not match this sign-in");
