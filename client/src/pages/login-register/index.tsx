@@ -1,415 +1,87 @@
-import React, { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import Icon from "../../components/AppIcon";
-import { startLinkedInLogin } from "../../utils/auth";
+import { useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { Linkedin, Users } from "lucide-react";
+import { useAuth } from "../../providers/AuthProvider";
+import { message, send, supportEmail } from "../../utils/api";
 
-/**
- * Modern, friendly redesign for the ProRate login/landing page.
- * - Lighter information density, stronger visual hierarchy
- * - Clear primary CTA (LinkedIn), supportive secondary actions
- * - Better mobile layout + accessibility
- * - Softer glassmorphism card on a gradient canvas
- * - Social proof strip and concise benefits grid
- * - Motion-free by default to keep bundle light; add `data-animate` to enable subtle transitions
- */
+function PublicHeader() {
+  return <header className="max-w-5xl mx-auto px-6 py-7 flex items-center">
+    <Link to="/" className="flex gap-2 items-center font-semibold text-primary"><Users aria-hidden="true" size={22} /> E-ProRate</Link>
+  </header>;
+}
 
-const people = [
-  {
-    name: "Sarah Johnson",
-    role: "Senior Software Engineer at TechCorp",
-    avatar: "https://randomuser.me/api/portraits/women/32.jpg",
-    quote:
-      "ProRate has transformed how I connect with other professionals. The rating system helps me identify top talent for collaborations.",
-  },
-  {
-    name: "Michael Chen",
-    role: "Product Manager at InnovateLab",
-    avatar:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
-    quote:
-      "The platform's community-driven approach gives me confidence when reaching out to new professionals in my field.",
-  },
-  {
-    name: "Priya Singh",
-    role: "Data Scientist at QuantifyAI",
-    avatar:
-      "https://images.unsplash.com/photo-1544006659-f0b21884ce1d?w=150&h=150&fit=crop&crop=face",
-    quote:
-      "Having verified, context-rich ratings saves me hours when evaluating potential collaborators on research and product experiments.",
-  },
-  {
-    name: "Daniel Roberts",
-    role: "Design Lead at FlowCreative",
-    avatar:
-      "https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?w=150&h=150&fit=crop&crop=face",
-    quote:
-      "ProRate surfaces the soft skills that rarely show up on resumes. It's become part of our hiring signal and mentoring program.",
-  },
-];
+export default function LoginRegister() {
+  const { session } = useAuth();
+  const location = useLocation();
+  const invite = new URLSearchParams(location.hash.slice(1)).get("invite");
+  const callbackError = new URLSearchParams(location.search).get("error");
+  const callbackMessage = callbackError === "suspended"
+    ? "This pilot account is suspended. See the privacy notice for the pilot support contact."
+    : callbackError === "invite" ? "Open a valid invitation link to join the pilot."
+    : "Sign-in could not be completed. Try again from your invitation if you have one.";
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
 
-const benefits = [
-  {
-    icon: "Users" as const,
-    title: "Professional Network",
-    desc: "Connect with verified professionals and build meaningful relationships.",
-  },
-  {
-    icon: "Star" as const,
-    title: "Community Ratings",
-    desc: "Get honest feedback from colleagues and peers to grow reputation.",
-  },
-  {
-    icon: "Shield" as const,
-    title: "Verified Profiles",
-    desc: "All profiles are LinkedIn-verified for authentic connections.",
-  },
-  {
-    icon: "TrendingUp" as const,
-    title: "Career Growth",
-    desc: "Track development and showcase achievements to the community.",
-  },
-];
-
-const stats = [
-  { number: "50,000+", label: "Active Professionals" },
-  { number: "200,000+", label: "Ratings Given" },
-  { number: "95%", label: "User Satisfaction" },
-  { number: "150+", label: "Countries" },
-];
-
-const LogoMark: React.FC<{ className?: string }> = ({ className }) => (
-  <div
-    className={`w-9 h-9 bg-primary rounded-xl flex items-center justify-center shadow-sm ${
-      className ?? ""
-    }`}
-  >
-    <Icon name="Users" size={20} color="white" />
-  </div>
-);
-
-const SocialProofStrip: React.FC = () => (
-  <div className="mt-8">
-    <div className="flex items-center gap-3 text-sm text-text-secondary">
-      <div className="flex -space-x-2">
-        {people.map((p, i) => (
-          <img
-            key={i}
-            src={p.avatar}
-            alt={p.name}
-            className="w-7 h-7 rounded-full ring-2 ring-white/80 object-cover"
-            loading={i > 1 ? "lazy" : undefined}
-          />
-        ))}
-      </div>
-      <span>Trusted by 50,000+ professionals</span>
-      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2 py-0.5 text-xs">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Icon key={i} name="Star" size={14} className="text-warning" />
-        ))}
-        <span className="ml-1">4.8/5</span>
-      </span>
-    </div>
-  </div>
-);
-
-const BenefitsGrid: React.FC = () => (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-    {benefits.map((b) => (
-      <div
-        key={b.title}
-        className="group rounded-2xl border border-border bg-surface/70 backdrop-blur p-4 hover:shadow-md transition-shadow"
-      >
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 rounded-xl bg-primary-50 flex items-center justify-center">
-            <Icon name={b.icon} size={22} className="text-primary" />
-          </div>
-          <div>
-            <h4 className="font-semibold text-text-primary">{b.title}</h4>
-            <p className="text-sm text-text-secondary mt-1">{b.desc}</p>
-          </div>
-        </div>
-      </div>
-    ))}
-  </div>
-);
-
-const StatPills: React.FC = () => (
-  <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-    {stats.map((s) => (
-      <div
-        key={s.label}
-        className="rounded-xl border border-border bg-background/70 px-4 py-3 text-center"
-      >
-        <div className="text-lg font-semibold text-primary">{s.number}</div>
-        <div className="text-xs text-text-secondary">{s.label}</div>
-      </div>
-    ))}
-  </div>
-);
-
-const TestimonialCards: React.FC = () => (
-  <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-4">
-    {people.map((p) => (
-      <figure key={p.name} className="rounded-2xl bg-primary-50 p-5">
-        <div className="flex items-start gap-3">
-          <img
-            src={p.avatar}
-            alt={p.name}
-            className="w-10 h-10 rounded-full object-cover"
-          />
-          <div className="flex-1">
-            <blockquote className="text-sm text-text-primary italic">
-              “{p.quote}”
-            </blockquote>
-            <figcaption className="mt-3">
-              <div className="font-medium text-text-primary">{p.name}</div>
-              <div className="text-xs text-text-secondary">{p.role}</div>
-            </figcaption>
-          </div>
-        </div>
-      </figure>
-    ))}
-  </div>
-);
-
-const WhyLinkedInDisclosure: React.FC = () => (
-  <div className="mt-4 flex justify-center">
-    <div className="relative group inline-block">
-      <span className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary-700 cursor-help">
-        <Icon name="Info" size={14} className="text-primary" />
-        Why LinkedIn?
-      </span>
-      <div
-        id="why-linkedin-tooltip"
-        role="tooltip"
-        className="pointer-events-none absolute left-full top-0 z-20 ml-3 w-72 max-w-[min(95vw,18rem)] rounded-xl border border-primary-200 bg-primary-50 p-3 text-left text-sm text-text-secondary opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-      >
-        <ul className="list-disc pl-5 space-y-1">
-          <li>Ensure ratings come from real professionals</li>
-          <li>Verify shared company history for credibility</li>
-          <li>No passwords stored; convenient one-tap sign-in</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-);
-
-const LinkedInButton: React.FC<{
-  isLoading: boolean;
-  onClick(): void;
-}> = ({ isLoading, onClick }) => (
-  <button
-    onClick={onClick}
-    disabled={isLoading}
-    aria-busy={isLoading}
-    className="relative z-10 w-full flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-[#0A66C2] text-white font-semibold shadow-lg hover:bg-[#0a58a5] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0A66C2] disabled:opacity-60"
-  >
-    {isLoading ? (
-      <>
-        <span className="inline-flex h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-        Redirecting to LinkedIn…
-      </>
-    ) : (
-      <>
-        <Icon name="Linkedin" size={22} />
-        Continue with LinkedIn
-      </>
-    )}
-  </button>
-);
-
-const PageChrome: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-background relative">
-    {/* Radial spotlights */}
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="absolute -top-48 left-1/2 -translate-x-1/2 w-[800px] h-[800px] rounded-full bg-primary-200/30 blur-3xl" />
-      <div className="absolute -bottom-56 -left-32 w-[560px] h-[560px] rounded-full bg-secondary-200/20 blur-3xl" />
-    </div>
-
-    <header className="sticky top-0 z-10 backdrop-blur supports-[backdrop-filter]:bg-surface/70 bg-surface/80 border-b border-border">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-3">
-          <LogoMark />
-          <span className="font-heading font-semibold text-xl text-primary">
-            ProRate
-          </span>
-        </Link>
-        <nav className="hidden sm:flex items-center gap-6 text-sm">
-          <a
-            href="#benefits"
-            className="text-text-secondary hover:text-primary"
-          >
-            Benefits
-          </a>
-          <a
-            href="#testimonials"
-            className="text-text-secondary hover:text-primary"
-          >
-            Testimonials
-          </a>
-          <Link to="/help" className="text-text-secondary hover:text-primary">
-            Help
-          </Link>
-        </nav>
-      </div>
-    </header>
-
-    <main className="relative flex-1">{children}</main>
-
-    <footer className="bg-surface border-t border-border py-8 mt-20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center gap-4 text-sm">
-        <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-6 text-text-secondary">
-            <Link to="/privacy" className="hover:text-primary">
-              Privacy Policy
-            </Link>
-            <Link to="/terms" className="hover:text-primary">
-              Terms of Service
-            </Link>
-            <Link to="/help" className="hover:text-primary">
-              Help Center
-            </Link>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-text-secondary">
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1">
-              <Icon name="Shield" size={14} className="text-success" /> SSL
-              Secured
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1">
-              <Icon name="CheckCircle" size={14} className="text-success" />{" "}
-              GDPR Compliant
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1">
-              <Icon name="Linkedin" size={14} className="text-[#0A66C2]" />{" "}
-              LinkedIn Verified
-            </span>
-          </div>
-          <p className="text-text-secondary">
-            © {new Date().getFullYear()} ProRate. All rights reserved.
-          </p>
-        </div>
-      </div>
-    </footer>
-  </div>
-);
-
-const LoginRegister: React.FC = () => {
-  const [isLoading, setIsLoading] = useState(false);
-  // Tooltip hover/FOCUS handled in WhyLinkedInDisclosure; no state needed here
-
-  const handleLinkedInAuth = async () => {
-    setIsLoading(true);
-    startLinkedInLogin();
-  };
-
-  const year = useMemo(() => new Date().getFullYear(), []);
+  async function signIn() {
+    setPending(true);
+    setError("");
+    try {
+      const { url } = await send<{ url: string }>("/auth/linkedin/start", "POST", invite ? { invite } : {});
+      window.location.assign(url);
+    } catch (failure) {
+      setError(message(failure));
+      setPending(false);
+    }
+  }
 
   return (
-    <PageChrome>
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 lg:pt-14 pb-12 lg:pb-16">
-        <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
-          {/* Left: Hero copy */}
-          <div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary-50 px-3 py-1 text-xs font-medium text-primary">
-              <Icon name="Shield" size={14} className="text-primary" />
-              LinkedIn-Verified Community
-            </span>
-
-            <h1 className="mt-4 text-4xl sm:text-5xl font-bold tracking-tight text-text-primary">
-              Build your professional reputation
-            </h1>
-            <p className="mt-4 text-lg text-text-secondary">
-              Join thousands of professionals who trust ProRate to showcase
-              skills, connect with peers, and advance their careers through
-              community-driven ratings.
-            </p>
-
-            <div className="mt-6 max-w-md">
-              <div className="relative">
-                <div className="pointer-events-none absolute -inset-1 rounded-3xl bg-gradient-to-r from-[#0A66C2]/25 via-primary/20 to-secondary/20 blur-xl opacity-70 animate-pulse" />
-                <LinkedInButton
-                  isLoading={isLoading}
-                  onClick={handleLinkedInAuth}
-                />
-              </div>
-              <p className="mt-2 text-xs text-text-secondary text-center">
-                We never post to LinkedIn. Used only for identity & company
-                verification.
-              </p>
-              <WhyLinkedInDisclosure />
-
-              <p className="mt-6 text-xs text-text-secondary text-center">
-                By continuing you agree to our{" "}
-                <Link
-                  to="/terms"
-                  className="text-primary hover:text-primary-700"
-                >
-                  Terms
-                </Link>{" "}
-                and{" "}
-                <Link
-                  to="/privacy"
-                  className="text-primary hover:text-primary-700"
-                >
-                  Privacy Policy
-                </Link>
-                .
-              </p>
-            </div>
-
-            <SocialProofStrip />
-          </div>
-
-          {/* Right: Benefits + Stats */}
-          <div className="w-full max-w-xl lg:ml-auto">
-            <div className="relative rounded-3xl border border-border bg-surface/80 backdrop-blur p-6 shadow-modal">
-              <div className="pointer-events-none absolute -top-6 -right-6 w-28 h-28 opacity-20 hidden sm:block">
-                <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-                  <defs>
-                    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor="#0A66C2" stopOpacity="0.5" />
-                      <stop
-                        offset="100%"
-                        stopColor="#7c3aed"
-                        stopOpacity="0.3"
-                      />
-                    </linearGradient>
-                  </defs>
-                  <circle cx="60" cy="60" r="58" fill="url(#g1)" />
-                </svg>
-              </div>
-              <BenefitsGrid />
-              <StatPills />
-            </div>
-          </div>
+    <div className="min-h-screen bg-background">
+      <PublicHeader />
+      <main className="max-w-5xl mx-auto px-6 py-14 sm:py-20 grid gap-10 md:grid-cols-2 items-center">
+        <div>
+          <h1 className="text-4xl sm:text-5xl leading-tight tracking-tight font-semibold text-primary">Private feedback from people you worked with</h1>
+          <p className="mt-5 text-lg text-slate-600">E-ProRate is an invitation-only pilot. Add your work history and exchange ratings with colleagues whose time at the same company overlaps with yours.</p>
         </div>
-
-        {/* Testimonials */}
-        <div id="testimonials" className="mt-16">
-          <h3 className="text-2xl font-semibold text-text-primary">
-            What professionals say
-          </h3>
-          <TestimonialCards />
-        </div>
-
-        {/* Minimal legal copy for mobile-only bottom spacing */}
-        <p className="mt-10 text-center text-xs text-text-secondary lg:hidden">
-          © {year} ProRate
-        </p>
-      </section>
-
-      {isLoading && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm grid place-items-center z-50">
-          <div className="bg-surface rounded-xl p-5 border border-border shadow-lg flex items-center gap-3">
-            <span className="inline-flex h-6 w-6 animate-spin rounded-full border-2 border-primary/40 border-t-primary" />
-            <span className="text-text-primary font-medium">
-              Authenticating…
-            </span>
-          </div>
-        </div>
-      )}
-    </PageChrome>
+        <section className="pilot-card">
+          <h2 className="text-xl font-semibold">{invite ? "Join the pilot" : "Access the pilot"}</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            {invite ? "Sign in with LinkedIn to redeem this invitation." : "New participants join through an invitation link. Returning participants can sign in below."}
+          </p>
+          {session ? (
+            <Link className="pilot-button mt-5" to="/dashboard-home">Open your dashboard</Link>
+          ) : (
+            <button type="button" className="pilot-button mt-5" disabled={pending} onClick={signIn}>
+              <Linkedin aria-hidden="true" size={18} /> {pending ? "Opening LinkedIn…" : "Continue with LinkedIn"}
+            </button>
+          )}
+          {(error || callbackError) && <p role="alert" className="mt-3 text-sm text-red-800">
+            {error || callbackMessage}
+          </p>}
+          <p className="mt-5 text-sm text-slate-600">
+            Read the <Link className="pilot-link" to="/terms">pilot rules</Link> and <Link className="pilot-link" to="/privacy">privacy notice</Link>.
+          </p>
+        </section>
+      </main>
+    </div>
   );
-};
+}
 
-export default LoginRegister;
+export function PilotPolicy({ privacy = false }: { privacy?: boolean }) {
+  return <><PublicHeader /><main className="pilot-main max-w-3xl">
+    <h1 className="pilot-title">{privacy ? "Pilot privacy notice" : "Pilot rules"}</h1>
+    <div className="pilot-card mt-6 space-y-4 leading-relaxed">
+      {privacy ? <>
+        <p>We use your LinkedIn account identifier and display name for sign-in. You enter your employer and dates. If you opt into the pilot directory, other signed-in participants can find you by name and see whether they are eligible to rate you.</p>
+        <p>Ratings are private to the author and recipient. Anonymous mode hides your name from the recipient. Authorized operators can review reported feedback, authorship, and the recorded date overlap. Work history and feedback can identify people, so avoid naming others in a rating.</p>
+        <p>Operators can see aggregate pilot activity, including how often received ratings are opened and how long report decisions take.</p>
+        <p>Contact pilot support to request access to or removal of your account data.</p>
+      </> : <>
+        <p>Enter your own work history accurately. Keep ratings relevant to your time working together and base feedback on your own experience.</p>
+        <p>Use the report action for harassment, impersonation, or sensitive personal information. An operator can hide a rating while handling a report.</p>
+        <p>Operators can suspend pilot access. Contact pilot support if you believe your account was suspended in error.</p>
+      </>}
+      <p>For pilot support, {supportEmail ? <a className="pilot-link" href={"mailto:" + supportEmail}>{supportEmail}</a> : "contact the person who invited you"}.</p>
+      <Link className="pilot-link" to="/">Back to E-ProRate</Link>
+    </div>
+  </main></>;
+}

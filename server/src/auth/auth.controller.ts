@@ -1,72 +1,68 @@
-import { Controller, Get, Res, Logger, Query, Req, Post } from "@nestjs/common";
-import type { Response } from "express";
-import { AuthService } from "./auth.service";
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, Post, Query, Req, Res, ServiceUnavailableException } from "@nestjs/common";
+import type { CookieOptions, Request, Response } from "express";
+import { clientOrigin } from "../config";
+import { Database } from "../database/database";
+import { AccountSuspendedException, AuthService, attemptMinutes, digest, sessionHours } from "./auth.service";
+
+const attemptCookie = "oauth_browser";
+const cookie = (path: string): CookieOptions => ({
+  httpOnly: true,
+  secure: clientOrigin().startsWith("https:"),
+  sameSite: "lax",
+  path,
+});
 
 @Controller("auth")
 export class AuthController {
-  private readonly logger = new Logger(AuthController.name);
+  constructor(private readonly auth: AuthService, private readonly db: Database) {}
 
-  constructor(private readonly auth: AuthService) {}
-
-  @Get("linkedin/start")
-  start(@Res() res: Response) {
-    const url = this.auth.buildAuthorizationUrl();
-    this.logger.log(`LinkedIn auth start: redirecting to ${url}`);
-    return res.redirect(url);
+  @Post("linkedin/start")
+  @HttpCode(200)
+  async start(@Body("invite") invite: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    await this.db.limit("oauth:" + digest(req.ip || "unknown"), 30);
+    let attempt;
+    try {
+      attempt = await this.auth.start(invite);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new ServiceUnavailableException("LinkedIn sign-in is unavailable. Try again later.");
+    }
+    res.cookie(attemptCookie, attempt.browser, {
+      ...cookie("/api/auth/linkedin"), maxAge: attemptMinutes * 60_000,
+    });
+    return { url: attempt.url };
   }
 
   @Get("linkedin/callback")
   async callback(
-    @Query("code") code: string,
-    @Query("state") state: string,
-    @Query("error") error: string | undefined,
-    @Query("error_description") errorDescription: string | undefined,
-    @Res() res: Response
+    @Query("code") code: unknown,
+    @Query("state") state: unknown,
+    @Req() req: Request,
+    @Res() res: Response,
   ) {
-    this.logger.log("LinkedIn callback received");
-    if (error) {
-      this.logger.error(`LinkedIn error: ${error} - ${errorDescription}`);
-      return res.status(400).send({ error, errorDescription });
-    }
+    const origin = clientOrigin();
     try {
-      const { sid } = await this.auth.handleCallback({ code, state });
-      this.logger.debug(`Session created with sid=${sid}`);
-      res.cookie("sid", sid, { httpOnly: false, sameSite: "lax" });
-      const redirect = process.env.CLIENT_APP_URL || "http://localhost:5173";
-      this.logger.log(`Redirecting to client: ${redirect}`);
-      return res.redirect(redirect);
-    } catch (e: any) {
-      this.logger.error(`Callback handling failed: ${e?.message || e}`);
-      return res.status(500).send({ error: "callback_failed" });
+      const session = await this.auth.complete(code, state, req.cookies?.[attemptCookie], req.cookies?.sid);
+      res.clearCookie(attemptCookie, cookie("/api/auth/linkedin"));
+      res.cookie("sid", session, { ...cookie("/"), maxAge: sessionHours * 3_600_000 });
+      return res.redirect(303, origin + "/dashboard-home");
+    } catch (error) {
+      const reason = error instanceof AccountSuspendedException ? "suspended"
+        : error instanceof ForbiddenException ? "invite" : "signin";
+      return res.redirect(303, origin + "/login-register?error=" + reason);
     }
   }
 
   @Get("session")
-  session(@Req() req: any, @Res() res: Response) {
-    try {
-      const sid = req.cookies?.sid as string | undefined;
-      const sess = this.auth.getSessionBySid(sid || null);
-      if (!sess) return res.status(204).send();
-      return res.json(sess);
-    } catch {
-      return res.status(204).send();
-    }
-  }
-
-  @Get("logout")
-  logout(@Req() req: any, @Res() res: Response) {
-    return this.performLogout(req, res);
+  async session(@Req() req: Request, @Res() res: Response) {
+    const user = await this.auth.sessionUser(req);
+    return user ? res.json({ user }) : res.status(204).end();
   }
 
   @Post("logout")
-  logoutPost(@Req() req: any, @Res() res: Response) {
-    return this.performLogout(req, res);
-  }
-
-  private performLogout(req: any, res: Response) {
-    const sid = req.cookies?.sid as string | undefined;
-    this.auth.destroySession(sid || null);
-    res.clearCookie("sid");
-    return res.status(204).send();
+  @HttpCode(204)
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    await this.auth.logout(req.cookies?.sid);
+    res.clearCookie("sid", cookie("/"));
   }
 }

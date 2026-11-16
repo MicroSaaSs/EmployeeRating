@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: prorate
+      POSTGRES_USER: prorate
+      POSTGRES_PASSWORD: prorate
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - prorate-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "prorate", "-d", "prorate"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  prorate-data:

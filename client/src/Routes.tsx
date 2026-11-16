@@ -1,74 +1,46 @@
-import React from "react";
-import { BrowserRouter, Routes as RouterRoutes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes as RouterRoutes } from "react-router-dom";
 import ScrollToTop from "./components/ScrollToTop";
 import ErrorBoundary from "./components/ErrorBoundary";
-// Page imports
-import LoginRegister from "./pages/login-register";
+import ProtectedRoute from "./components/ProtectedRoute";
+import LoginRegister, { PilotPolicy } from "./pages/login-register";
 import DashboardHome from "./pages/dashboard-home";
 import ProfessionalSearchDiscovery from "./pages/professional-search-discovery";
 import ProfessionalProfile from "./pages/professional-profile";
 import RateProfessional from "./pages/rate-professional";
 import MyRatingsDashboard from "./pages/my-ratings-dashboard";
-import ProtectedRoute from "./components/ProtectedRoute";
-import AuthCallback from "./pages/AuthCallback";
+import WorkHistory from "./pages/WorkHistory";
+import Moderation from "./pages/Moderation";
+import PilotOperations from "./pages/PilotOperations";
+import NotFound from "./pages/NotFound";
 import { AuthProvider } from "./providers/AuthProvider";
 
-const Routes: React.FC = () => {
+export default function Routes() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
         <AuthProvider>
           <ScrollToTop />
           <RouterRoutes>
-            <Route path="/login-register" element={<LoginRegister />} />
-            <Route path="/auth/callback" element={<AuthCallback />} />
-            <Route
-              path="/dashboard-home"
-              element={
-                <ProtectedRoute>
-                  <DashboardHome />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/professional-search-discovery"
-              element={
-                <ProtectedRoute>
-                  <ProfessionalSearchDiscovery />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/professional-profile"
-              element={
-                <ProtectedRoute>
-                  <ProfessionalProfile />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/rate-professional"
-              element={
-                <ProtectedRoute>
-                  <RateProfessional />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/my-ratings-dashboard"
-              element={
-                <ProtectedRoute>
-                  <MyRatingsDashboard />
-                </ProtectedRoute>
-              }
-            />
             <Route path="/" element={<LoginRegister />} />
-            <Route path="*" element={<div>Page Not Found</div>} />
+            <Route path="/login-register" element={<LoginRegister />} />
+            <Route path="/privacy" element={<PilotPolicy privacy />} />
+            <Route path="/terms" element={<PilotPolicy />} />
+            <Route element={<ProtectedRoute />}>
+              <Route path="/dashboard-home" element={<DashboardHome />} />
+              <Route path="/work-history" element={<WorkHistory />} />
+              <Route path="/professional-search-discovery" element={<ProfessionalSearchDiscovery />} />
+              <Route path="/professionals/:id" element={<ProfessionalProfile />} />
+              <Route path="/professionals/:id/rate" element={<RateProfessional />} />
+              <Route path="/professional-profile" element={<Navigate to="/professional-search-discovery" replace />} />
+              <Route path="/rate-professional" element={<Navigate to="/professional-search-discovery" replace />} />
+              <Route path="/my-ratings-dashboard" element={<MyRatingsDashboard />} />
+              <Route path="/moderation" element={<Moderation />} />
+              <Route path="/pilot-operations" element={<PilotOperations />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
           </RouterRoutes>
         </AuthProvider>
       </ErrorBoundary>
     </BrowserRouter>
   );
-};
-
-export default Routes;
+}

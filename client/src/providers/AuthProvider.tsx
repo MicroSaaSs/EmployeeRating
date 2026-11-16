@@ -1,89 +1,46 @@
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import type { Session } from "../utils/auth";
-import {
-  authStorage,
-  logoutSession,
-  startLinkedInLogin,
-  getApiBaseUrl,
-} from "../utils/auth";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { message, request, send } from "../utils/api";
+
+type Session = { user: { id: string; name: string; role: "participant" | "operator" } };
 
 type AuthContextValue = {
   session: Session | null;
   isLoading: boolean;
-  loginWithLinkedIn: () => void;
+  error: string;
   logout: () => Promise<void>;
-  setSession: (s: Session | null) => void;
 };
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const AuthContext = createContext<AuthContextValue | null>(null);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const stored = authStorage.load();
-    if (stored) setSession(stored);
-    // also try to hydrate from server cookie session
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBaseUrl()}/auth/session`, {
-          credentials: "include",
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.user) {
-            setSession({
-              user: {
-                id: data.user.id,
-                name: `${data.user.firstName || ""} ${
-                  data.user.lastName || ""
-                }`.trim(),
-                avatarUrl: data.user.avatar,
-              },
-              accessToken: "",
-            });
-            authStorage.save({
-              user: {
-                id: data.user.id,
-                name: `${data.user.firstName || ""} ${
-                  data.user.lastName || ""
-                }`.trim(),
-                avatarUrl: data.user.avatar,
-              },
-              accessToken: "",
-            });
-          }
-        }
-      } catch {}
-      setIsLoading(false);
-    })();
+    const controller = new AbortController();
+    const expire = () => setSession(null);
+    window.addEventListener("session-expired", expire);
+    request<Session | undefined>("/auth/session", { signal: controller.signal })
+      .then((data) => { if (!controller.signal.aborted) setSession(data ?? null); })
+      .catch((failure: unknown) => { if (!controller.signal.aborted) setError(message(failure)); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => {
+      controller.abort();
+      window.removeEventListener("session-expired", expire);
+    };
   }, []);
 
-  const loginWithLinkedIn = () => startLinkedInLogin();
-  const logout = async () => {
-    await logoutSession();
+  async function logout() {
+    await send("/auth/logout", "POST");
     setSession(null);
-  };
+  }
 
-  const value = useMemo(
-    () => ({ session, isLoading, loginWithLinkedIn, logout, setSession }),
-    [session, isLoading]
-  );
+  return <AuthContext.Provider value={{ session, isLoading, error, logout }}>{children}</AuthContext.Provider>;
+}
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
-
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
-};
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth requires AuthProvider");
+  return context;
+}

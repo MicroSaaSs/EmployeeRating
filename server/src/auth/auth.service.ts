@@ -1,100 +1,119 @@
-import { Injectable, Logger } from "@nestjs/common";
-import axios from "axios";
-import { nanoid } from "nanoid";
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { createHash, randomBytes } from "node:crypto";
+import type { Request } from "express";
+import { Database } from "../database/database";
+import { LinkedInService } from "./linkedin.service";
 
-const SESSIONS = new Map<string, any>();
+export const sessionHours = 24 * 7;
+export const attemptMinutes = 10;
+export const newToken = () => randomBytes(32).toString("base64url");
+export const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+export const isToken = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value);
+
+export interface SessionUser {
+  id: string;
+  name: string;
+  role: "participant" | "operator";
+}
+
+export class AccountSuspendedException extends ForbiddenException {
+  constructor() {
+    super("This account is suspended.");
+  }
+}
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
-  private get clientId() {
-    return process.env.LINKEDIN_CLIENT_ID || "";
-  }
-  private get clientSecret() {
-    return process.env.LINKEDIN_CLIENT_SECRET || "";
-  }
-  private get redirectUri() {
-    return (
-      process.env.LINKEDIN_REDIRECT_URI ||
-      "http://localhost:3000/auth/linkedin/callback"
+  constructor(private readonly db: Database, private readonly linkedIn: LinkedInService) {}
+
+  async start(invite: unknown) {
+    if (invite !== undefined && !isToken(invite)) throw new BadRequestException("This invitation link is invalid.");
+    const state = newToken();
+    const browser = newToken();
+    const url = this.linkedIn.authorizationUrl(state);
+    await this.db.pool.query(
+      `WITH started AS (
+         INSERT INTO oauth_attempts (state_digest, browser_digest, invite_digest, expires_at, counted)
+         VALUES ($1, $2, $3, now() + $4 * interval '1 minute', true)
+       )
+       UPDATE pilot_activity_counts SET sign_ins_started = sign_ins_started + 1 WHERE id`,
+      [digest(state), digest(browser), invite ? digest(invite) : null, attemptMinutes],
     );
+    return { url, browser };
   }
 
-  buildAuthorizationUrl() {
-    const state = nanoid(16);
-    // Use OIDC self-serve sign-in scopes
-    const scopes = ["openid", "profile", "email"];
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: this.clientId,
-      redirect_uri: this.redirectUri,
-      scope: scopes.join(" "),
-      state,
+  async complete(code: unknown, state: unknown, browser: unknown, previousSession: unknown) {
+    if (typeof code !== "string" || !code || code.length > 4096 || !isToken(state) || !isToken(browser)) {
+      throw new BadRequestException("This sign-in attempt is invalid.");
+    }
+    const { rows } = await this.db.pool.query<{ invite_digest: string | null; counted: boolean }>(
+      `DELETE FROM oauth_attempts WHERE state_digest = $1 AND browser_digest = $2 AND expires_at > now()
+       RETURNING invite_digest, counted`, [digest(state), digest(browser)],
+    );
+    const attempt = rows[0];
+    if (!attempt) throw new BadRequestException("This sign-in attempt expired or was already used.");
+
+    const identity = await this.linkedIn.verify(code);
+    const session = newToken();
+    await this.db.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [identity.issuer + ":" + identity.subject]);
+      const existing = await client.query<{ id: string; suspended_at: Date | null }>(
+        "SELECT id, suspended_at FROM users WHERE issuer = $1 AND subject = $2 FOR NO KEY UPDATE",
+        [identity.issuer, identity.subject],
+      );
+      if (existing.rows[0]?.suspended_at) throw new AccountSuspendedException();
+      let userId = existing.rows[0]?.id;
+      const joining = !userId;
+      if (!userId) {
+        const invite = await client.query<{ role: SessionUser["role"] }>(
+          `UPDATE invites SET redeemed_at = now()
+           WHERE digest = $1 AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+           RETURNING role`, [attempt.invite_digest],
+        );
+        if (!invite.rowCount) throw new ForbiddenException("A valid invitation is needed to join the pilot.");
+        const created = await client.query<SessionUser>(
+          "INSERT INTO users (issuer, subject, name, role) VALUES ($1, $2, $3, $4) RETURNING id",
+          [identity.issuer, identity.subject, identity.name, invite.rows[0].role],
+        );
+        userId = created.rows[0].id;
+      }
+      if (isToken(previousSession)) await client.query("DELETE FROM sessions WHERE digest = $1", [digest(previousSession)]);
+      await client.query(
+        "INSERT INTO sessions (digest, user_id, expires_at) VALUES ($1, $2, now() + $3 * interval '1 hour')",
+        [digest(session), userId, sessionHours],
+      );
+      await client.query(
+        `UPDATE pilot_activity_counts SET sign_ins_completed = sign_ins_completed + $1,
+           invites_redeemed = invites_redeemed + $2 WHERE id`,
+        [Number(attempt.counted), Number(joining)],
+      );
     });
-    this.logger.debug(
-      `Building authorization URL with redirectUri=${
-        this.redirectUri
-      } scopes=${scopes.join(",")}`
+    return session;
+  }
+
+  async sessionUser(req: Request): Promise<SessionUser | undefined> {
+    const session = req.cookies?.sid;
+    if (!isToken(session)) return undefined;
+    const { rows } = await this.db.pool.query<SessionUser>(
+      `SELECT u.id, u.name, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.digest = $1 AND s.expires_at > now() AND u.suspended_at IS NULL`, [digest(session)],
     );
-    return `https://www.linkedin.com/oauth/v2/authorization?${params.toString()}`;
+    return rows[0];
   }
 
-  async handleCallback({ code, state }: { code: string; state: string }) {
-    if (!code) throw new Error("Missing code");
-    this.logger.log(
-      "Handling LinkedIn callback: exchanging code for access token"
-    );
-    // Exchange code for token
-    const tokenRes = await axios.post(
-      "https://www.linkedin.com/oauth/v2/accessToken",
-      new URLSearchParams({
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: this.redirectUri,
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-      }),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-    );
-
-    const accessToken = tokenRes.data.access_token as string;
-    this.logger.debug("Access token received from LinkedIn (OIDC)");
-
-    // Fetch OIDC userinfo (works with openid profile email)
-    this.logger.log("Fetching LinkedIn OIDC userinfo");
-    const userinfo = await axios.get("https://api.linkedin.com/v2/userinfo", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const user = {
-      id: userinfo.data?.sub,
-      firstName: userinfo.data?.given_name,
-      lastName: userinfo.data?.family_name,
-      email: userinfo.data?.email,
-      avatar: userinfo.data?.picture,
-    };
-
-    const sid = nanoid(18);
-    SESSIONS.set(sid, { user, accessToken });
-    this.logger.log(`Session created for user ${user.id} sid=${sid}`);
-    return { sid, user };
+  async requireUser(req: Request): Promise<SessionUser> {
+    const user = await this.sessionUser(req);
+    if (!user) throw new UnauthorizedException("Sign in to continue.");
+    return user;
   }
 
-  async createSession(user: any) {
-    const sid = nanoid(18);
-    SESSIONS.set(sid, { user });
-    this.logger.log(`Ephemeral session created sid=${sid}`);
-    return { sid, user };
+  async requireOperator(req: Request): Promise<SessionUser> {
+    const user = await this.requireUser(req);
+    if (user.role !== "operator") throw new ForbiddenException();
+    return user;
   }
 
-  getSessionBySid(sid?: string | null) {
-    if (!sid) return null;
-    return SESSIONS.get(sid) || null;
-  }
-
-  destroySession(sid?: string | null) {
-    if (!sid) return false;
-    const existed = SESSIONS.delete(sid);
-    if (existed) this.logger.log(`Session destroyed sid=${sid}`);
-    return existed;
+  async logout(session: unknown) {
+    if (isToken(session)) await this.db.pool.query("DELETE FROM sessions WHERE digest = $1", [digest(session)]);
   }
 }

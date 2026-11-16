@@ -1,0 +1,8 @@
+.git
+.github
+reference
+**/.env*
+**/node_modules
+**/build
+**/dist
+.DS_Store

@@ -1,119 +1,39 @@
-import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../../providers/AuthProvider";
+import { useResource, type WorkEntry } from "../../utils/api";
 
-import Header from "../../components/ui/Header";
-import Icon from "../../components/AppIcon";
-
-import RecentActivity from "./components/RecentActivity";
-import TrendingProfessionals from "./components/TrendingProfessionals";
-import QuickActions from "./components/QuickActions";
-import PersonalStats from "./components/PersonalStats";
-
-const DashboardHome: React.FC = () => {
-  const [isStatsCollapsed, setIsStatsCollapsed] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const currentUser = {
-    name: "Sarah Johnson",
-    title: "Senior Product Manager",
-    avatar:
-      "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
-    ratingsGiven: 47,
-    ratingsReceived: 23,
-    profileViews: 156,
-    reputationScore: 4.7,
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setRefreshing(false);
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // Data loaded
-    }, 500);
-    return () => clearTimeout(timer);
-  }, []);
+export default function DashboardHome() {
+  const { session } = useAuth();
+  const { data, error } = useResource<{ history: WorkEntry[]; visible: boolean }>("/work-history");
+  const needsHistory = data?.history.length === 0;
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-
-      <div className="pt-16 pb-20 md:pb-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-text-primary">
-                  Welcome back, {currentUser.name}
-                </h1>
-                <p className="text-text-secondary mt-1">
-                  Here's what's happening in your professional network
-                </p>
-              </div>
-
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-700 transition-smooth disabled:opacity-50"
-              >
-                <Icon
-                  name="RefreshCw"
-                  size={16}
-                  className={refreshing ? "animate-spin" : ""}
-                />
-                <span className="hidden sm:inline">Refresh</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="hidden lg:grid lg:grid-cols-12 lg:gap-8">
-            <div className="lg:col-span-8 space-y-8">
-              <QuickActions />
-              <RecentActivity refreshing={refreshing} />
-              <TrendingProfessionals />
-            </div>
-
-            <div className="lg:col-span-4">
-              <div className="sticky top-24">
-                <PersonalStats
-                  user={currentUser}
-                  isCollapsed={isStatsCollapsed}
-                  onToggleCollapse={() =>
-                    setIsStatsCollapsed(!isStatsCollapsed)
-                  }
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:hidden space-y-6">
-            <QuickActions />
-
-            <div className="md:hidden">
-              <PersonalStats
-                user={currentUser}
-                isCollapsed={isStatsCollapsed}
-                onToggleCollapse={() => setIsStatsCollapsed(!isStatsCollapsed)}
-              />
-            </div>
-
-            <RecentActivity refreshing={refreshing} />
-            <TrendingProfessionals />
-
-            <div className="hidden md:block lg:hidden">
-              <PersonalStats
-                user={currentUser}
-                isCollapsed={false}
-                onToggleCollapse={() => {}}
-              />
-            </div>
-          </div>
-        </div>
+    <main className="pilot-main">
+      <h1 className="pilot-title">Welcome, {session?.user.name}</h1>
+      {error && <p className="mt-4 text-red-800" role="alert">{error}</p>}
+      <div className="grid gap-4 mt-7 sm:grid-cols-3">
+        <section className="pilot-card">
+          <h2 className="font-semibold text-lg">Work history</h2>
+          <p className="mt-2 mb-4 text-slate-600">{needsHistory ? "Start by adding a company and the dates you worked there." : "Manage your employment dates and directory visibility."}</p>
+          <Link className={needsHistory ? "pilot-button" : "pilot-link"} to="/work-history">{needsHistory ? "Add work history" : "Manage work history"}</Link>
+        </section>
+        <section className="pilot-card">
+          <h2 className="font-semibold text-lg">Find colleagues</h2>
+          <p className="mt-2 mb-4 text-slate-600">Find invited participants and see whether your work dates overlap.</p>
+          {data && data.history.length > 0
+            ? <Link className="pilot-link" to="/professional-search-discovery?eligible=1">Find eligible colleagues</Link>
+            : <Link className="pilot-link" to="/professional-search-discovery">Open the directory</Link>}
+        </section>
+        <section className="pilot-card">
+          <h2 className="font-semibold text-lg">My ratings</h2>
+          <p className="mt-2 mb-4 text-slate-600">See your given and received ratings or report inappropriate feedback.</p>
+          <Link className="pilot-link" to="/my-ratings-dashboard">Open my ratings</Link>
+        </section>
       </div>
-    </div>
+      <details className="mt-6 text-sm text-slate-600">
+        <summary className="cursor-pointer">Account reference for support</summary>
+        <p className="mt-2 break-all"><code>{session?.user.id}</code></p>
+      </details>
+    </main>
   );
-};
-
-export default DashboardHome;
+}

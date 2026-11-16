@@ -1,20 +1,17 @@
-import { Controller, Get, Logger } from "@nestjs/common";
-import { AppService } from "./app.service";
+import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
+import { Database } from "./database/database";
 
-@Controller()
 @Controller()
 export class AppController {
-  private readonly logger = new Logger(AppController.name);
-  constructor(private readonly appService: AppService) {}
+  constructor(private readonly db: Database) {}
 
   @Get("health")
-  health() {
-    const payload = {
-      status: "ok",
-      uptime: process.uptime(),
-      timestamp: Date.now(),
-    };
-    this.logger.debug(`Health check ok: uptime=${payload.uptime}`);
-    return payload;
+  async health() {
+    try {
+      await this.db.pool.query("SELECT 1 FROM pilot_settings LIMIT 1");
+      return { status: "ok" };
+    } catch {
+      throw new ServiceUnavailableException("Database unavailable");
+    }
   }
 }

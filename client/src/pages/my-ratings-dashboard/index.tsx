@@ -1,406 +1,144 @@
-import React, { useState, useMemo } from "react";
-import { Link } from "react-router-dom";
-import Header from "../../components/ui/Header";
-import Icon from "../../components/AppIcon";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { message, send, useResource, type Rating } from "../../utils/api";
 
-import RatingsGivenTab from "./components/RatingsGivenTab";
-import RatingsReceivedTab from "./components/RatingsReceivedTab";
-import AnalyticsTab from "./components/AnalyticsTab";
+const ratingTabs = [
+  { id: "given", label: "Given" },
+  { id: "received", label: "Received" },
+  { id: "reports", label: "My reports" },
+] as const;
 
-const MyRatingsDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<
-    "given" | "received" | "analytics"
-  >("given");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<"date" | "rating" | "name">("date");
-  const [filterBy, setFilterBy] = useState<"all" | "high" | "medium" | "low">(
-    "all"
-  );
-
-  const ratingsGiven = [
-    {
-      id: 1,
-      professionalName: "Sarah Johnson",
-      professionalTitle: "Senior Software Engineer",
-      company: "TechCorp Inc.",
-      avatar: "https://randomuser.me/api/portraits/women/32.jpg",
-      rating: 4.5,
-      category: "Technical Skills",
-      comment:
-        "Sarah demonstrated exceptional problem-solving abilities during our collaboration on the e-commerce platform project. Her expertise in React and Node.js was evident throughout the development process.\n\nShe consistently delivered high-quality code and was always willing to help team members when they encountered challenges.",
-      submittedDate: new Date("2024-01-15"),
-      canEdit: true,
-      canDelete: true,
-    },
-    {
-      id: 2,
-      professionalName: "Michael Chen",
-      professionalTitle: "Product Manager",
-      company: "InnovateLab",
-      avatar: "https://randomuser.me/api/portraits/men/45.jpg",
-      rating: 5.0,
-      category: "Leadership",
-      comment:
-        "Michael's leadership during the product launch was outstanding. He effectively coordinated between different teams and ensured all stakeholders were aligned with the project goals.\n\nHis strategic thinking and communication skills made the entire process smooth and successful.",
-      submittedDate: new Date("2024-01-10"),
-      canEdit: true,
-      canDelete: false,
-    },
-    {
-      id: 3,
-      professionalName: "Emily Rodriguez",
-      professionalTitle: "UX Designer",
-      company: "DesignStudio",
-      avatar: "https://randomuser.me/api/portraits/women/28.jpg",
-      rating: 4.8,
-      category: "Creativity",
-      comment:
-        "Emily's design work on our mobile app was exceptional. She has a great eye for user experience and created intuitive interfaces that significantly improved user engagement.\n\nHer attention to detail and ability to translate complex requirements into simple, elegant designs is remarkable.",
-      submittedDate: new Date("2024-01-05"),
-      canEdit: false,
-      canDelete: false,
-    },
-  ];
-
-  const ratingsReceived = [
-    {
-      id: 1,
-      raterName: "David Wilson",
-      raterTitle: "Engineering Manager",
-      company: "TechFlow Solutions",
-      avatar: "https://randomuser.me/api/portraits/men/52.jpg",
-      rating: 4.7,
-      category: "Technical Skills",
-      comment:
-        "Excellent collaboration on the API integration project. Strong technical skills and great communication throughout the development process.\n\nAlways delivered on time and provided valuable insights during code reviews.",
-      receivedDate: new Date("2024-01-12"),
-      hasResponded: false,
-      canRespond: true,
-    },
-    {
-      id: 2,
-      raterName: "Lisa Thompson",
-      raterTitle: "Senior Developer",
-      company: "CodeCraft Inc.",
-      avatar: "https://randomuser.me/api/portraits/women/38.jpg",
-      rating: 5.0,
-      category: "Problem Solving",
-      comment:
-        "Outstanding problem-solving abilities. Helped resolve critical issues in our production environment with innovative solutions.\n\nA true professional who goes above and beyond to ensure project success.",
-      receivedDate: new Date("2024-01-08"),
-      hasResponded: true,
-      canRespond: false,
-      response:
-        "Thank you for the kind words, Lisa! It was a pleasure working with you on that challenging project.",
-    },
-    {
-      id: 3,
-      raterName: "James Martinez",
-      raterTitle: "Project Lead",
-      company: "AgileWorks",
-      avatar: "https://randomuser.me/api/portraits/men/41.jpg",
-      rating: 4.6,
-      category: "Communication",
-      comment:
-        "Great communication skills and team collaboration. Made significant contributions to our agile development process.\n\nAlways prepared for meetings and provided clear updates on project progress.",
-      receivedDate: new Date("2024-01-03"),
-      hasResponded: false,
-      canRespond: true,
-    },
-  ];
-
-  const analyticsData = {
-    overallRating: 4.7,
-    totalRatingsReceived: 24,
-    totalRatingsGiven: 18,
-    profileViews: 156,
-    ratingTrends: [
-      { month: "Sep", received: 3, given: 2 },
-      { month: "Oct", received: 5, given: 4 },
-      { month: "Nov", received: 8, given: 6 },
-      { month: "Dec", received: 6, given: 4 },
-      { month: "Jan", received: 2, given: 2 },
-    ],
-    categoryBreakdown: [
-      { category: "Technical Skills", rating: 4.8, count: 8 },
-      { category: "Communication", rating: 4.6, count: 6 },
-      { category: "Leadership", rating: 4.7, count: 5 },
-      { category: "Problem Solving", rating: 4.9, count: 3 },
-      { category: "Creativity", rating: 4.5, count: 2 },
-    ],
-  };
-
-  const tabs = [
-    { id: "given", label: "Ratings Given", count: ratingsGiven.length },
-    {
-      id: "received",
-      label: "Ratings Received",
-      count: ratingsReceived.length,
-    },
-    { id: "analytics", label: "My Profile Analytics", count: null },
-  ] as const;
-
-  const filteredData = useMemo(() => {
-    let data: any[] = activeTab === "given" ? ratingsGiven : ratingsReceived;
-    if (searchQuery) {
-      data = data.filter(
-        (item) =>
-          (activeTab === "given" ? item.professionalName : item.raterName)
-            .toLowerCase()
-            .includes(searchQuery.toLowerCase()) ||
-          item.company.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    if (filterBy !== "all") {
-      if (filterBy === "high") data = data.filter((item) => item.rating >= 4.5);
-      else if (filterBy === "medium")
-        data = data.filter((item) => item.rating >= 3.5 && item.rating < 4.5);
-      else if (filterBy === "low")
-        data = data.filter((item) => item.rating < 3.5);
-    }
-    data.sort((a, b) => {
-      if (sortBy === "date") {
-        const dateA = activeTab === "given" ? a.submittedDate : a.receivedDate;
-        const dateB = activeTab === "given" ? b.submittedDate : b.receivedDate;
-        return (dateB as any) - (dateA as any);
-      } else if (sortBy === "rating") {
-        return b.rating - a.rating;
-      } else if (sortBy === "name") {
-        const nameA = activeTab === "given" ? a.professionalName : a.raterName;
-        const nameB = activeTab === "given" ? b.professionalName : b.raterName;
-        return nameA.localeCompare(nameB);
-      }
-      return 0;
-    });
-    return data;
-  }, [activeTab, searchQuery, sortBy, filterBy, ratingsGiven, ratingsReceived]);
-
-  const handleExportData = () => {
-    const dataToExport = activeTab === "given" ? ratingsGiven : ratingsReceived;
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [
-        activeTab === "given"
-          ? "Professional Name,Company,Rating,Category,Date,Comment"
-          : "Rater Name,Company,Rating,Category,Date,Comment",
-        ...dataToExport.map((item: any) =>
-          activeTab === "given"
-            ? `"${item.professionalName}","${item.company}",${item.rating},"${
-                item.category
-              }","${item.submittedDate.toLocaleDateString()}","${item.comment.replace(
-                /"/g,
-                '""'
-              )}"`
-            : `"${item.raterName}","${item.company}",${item.rating},"${
-                item.category
-              }","${item.receivedDate.toLocaleDateString()}","${item.comment.replace(
-                /"/g,
-                '""'
-              )}"`
-        ),
-      ].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `${activeTab}-ratings.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="pt-16 pb-20 md:pb-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="mb-8">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h1 className="text-3xl font-bold text-text-primary mb-2">
-                  My Ratings Dashboard
-                </h1>
-                <p className="text-text-secondary">
-                  Manage your rating activity and track your professional
-                  reputation
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleExportData}
-                  className="flex items-center gap-2 px-4 py-2 bg-surface border border-border rounded-lg text-text-secondary hover:text-primary hover:border-primary transition-smooth"
-                >
-                  <Icon name="Download" size={18} />
-                  <span className="hidden sm:inline">Export</span>
-                </button>
-
-                <Link
-                  to="/professional-search-discovery"
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-700 transition-smooth"
-                >
-                  <Icon name="Plus" size={18} />
-                  <span className="hidden sm:inline">Rate Professional</span>
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-surface border border-border rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary-50 rounded-lg flex items-center justify-center">
-                  <Icon name="Star" size={20} className="text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-text-primary">
-                    {analyticsData.overallRating}
-                  </p>
-                  <p className="text-sm text-text-secondary">Overall Rating</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-surface border border-border rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-success-50 rounded-lg flex items-center justify-center">
-                  <Icon name="TrendingUp" size={20} className="text-success" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-text-primary">
-                    {analyticsData.totalRatingsReceived}
-                  </p>
-                  <p className="text-sm text-text-secondary">Received</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-surface border border-border rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-accent-50 rounded-lg flex items-center justify-center">
-                  <Icon
-                    name="MessageSquare"
-                    size={20}
-                    className="text-accent"
-                  />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-text-primary">
-                    {analyticsData.totalRatingsGiven}
-                  </p>
-                  <p className="text-sm text-text-secondary">Given</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-surface border border-border rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-secondary-50 rounded-lg flex items-center justify-center">
-                  <Icon name="Eye" size={20} className="text-secondary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-text-primary">
-                    {analyticsData.profileViews}
-                  </p>
-                  <p className="text-sm text-text-secondary">Profile Views</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-surface border border-border rounded-lg mb-6">
-            <div className="border-b border-border">
-              <nav className="flex overflow-x-auto">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex items-center gap-2 px-6 py-4 text-sm font-medium whitespace-nowrap border-b-2 transition-smooth ${
-                      activeTab === tab.id
-                        ? "border-primary text-primary bg-primary-50"
-                        : "border-transparent text-text-secondary hover:text-primary hover:bg-primary-50"
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    {tab.count !== null && (
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs ${
-                          activeTab === tab.id
-                            ? "bg-primary text-white"
-                            : "bg-border text-text-secondary"
-                        }`}
-                      >
-                        {tab.count}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </nav>
-            </div>
-
-            {activeTab !== "analytics" && (
-              <div className="p-4 border-b border-border">
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <div className="flex-1">
-                    <div className="relative">
-                      <Icon
-                        name="Search"
-                        size={20}
-                        className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary"
-                      />
-                      <input
-                        type="text"
-                        placeholder={`Search ${
-                          activeTab === "given" ? "professionals" : "raters"
-                        }...`}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <select
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value as any)}
-                      className="px-3 py-2 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                    >
-                      <option value="date">Sort by Date</option>
-                      <option value="rating">Sort by Rating</option>
-                      <option value="name">Sort by Name</option>
-                    </select>
-
-                    <select
-                      value={filterBy}
-                      onChange={(e) => setFilterBy(e.target.value as any)}
-                      className="px-3 py-2 border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                    >
-                      <option value="all">All Ratings</option>
-                      <option value="high">High (4.5+)</option>
-                      <option value="medium">Medium (3.5-4.4)</option>
-                      <option value="low">Low (&lt;3.5)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="p-6">
-              {activeTab === "given" && (
-                <RatingsGivenTab ratings={filteredData as any} />
-              )}
-              {activeTab === "received" && (
-                <RatingsReceivedTab ratings={filteredData as any} />
-              )}
-              {activeTab === "analytics" && (
-                <AnalyticsTab data={analyticsData as any} />
-              )}
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+const reportOutcomes = {
+  open: "Under review",
+  hidden: "Rating hidden",
+  kept: "Rating kept",
+  restored: "Rating restored",
 };
 
-export default MyRatingsDashboard;
+function FiledReports() {
+  const reports = useResource<Array<{
+    id: string;
+    reason: string;
+    createdAt: string;
+    decidedAt: string | null;
+    outcome: keyof typeof reportOutcomes;
+  }>>("/ratings/reports/mine");
+
+  if (reports.error) return <p className="mt-5 text-red-800" role="alert">{reports.error}</p>;
+  if (!reports.data) return <p className="mt-5" role="status">Loading reports…</p>;
+  if (!reports.data.length) return <p className="pilot-card mt-5">You haven’t reported any ratings yet.</p>;
+
+  return <ul className="mt-5 space-y-4">
+    {reports.data.map((report) => <li className="pilot-card" key={report.id}>
+      <h2 className="font-semibold">{reportOutcomes[report.outcome]}</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Filed <time dateTime={report.createdAt}>{new Date(report.createdAt).toLocaleString()}</time>
+      </p>
+      {report.decidedAt && <p className="text-sm text-slate-600">
+        Decision updated <time dateTime={report.decidedAt}>{new Date(report.decidedAt).toLocaleString()}</time>
+      </p>}
+      <p className="mt-3 text-sm font-medium">Your report</p>
+      <p className="mt-1 whitespace-pre-wrap break-words">{report.reason}</p>
+    </li>)}
+  </ul>;
+}
+
+function ReportForm({ id, cancel, onSent }: { id: string; cancel: () => void; onSent: () => void }) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+
+  async function report(event: FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      await send("/ratings/" + id + "/report", "POST", { reason });
+      onSent();
+    } catch (failure) {
+      setError(message(failure));
+      setPending(false);
+    }
+  }
+
+  return <form className="mt-4 space-y-3" onSubmit={report}>
+    <label className="block">Reason for reporting
+      <textarea className="pilot-field mt-1" value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+        minLength={5} maxLength={1000} disabled={pending} required />
+    </label>
+    {error && <p role="alert" className="text-red-800">{error}</p>}
+    <div className="flex gap-2">
+      <button className="pilot-button" disabled={pending}>Send report</button>
+      <button type="button" className="pilot-button-secondary" onClick={cancel} disabled={pending}>Cancel</button>
+    </div>
+  </form>;
+}
+
+export default function MyRatingsDashboard() {
+  const [params, setParams] = useSearchParams();
+  const state = useLocation().state as { saved?: boolean } | null;
+  const [reportId, setReportId] = useState<string>();
+  const [notice, setNotice] = useState("");
+  const ratings = useResource<{ given: Rating[]; received: Rating[] }>("/ratings/mine");
+  const tab = ratingTabs.find(({ id }) => id === params.get("tab"))?.id ?? "received";
+  const given = tab === "given";
+  const items = given ? ratings.data?.given : ratings.data?.received;
+
+  useEffect(() => {
+    if (tab !== "received" || !items) return;
+    const unopened = items.filter((rating) => !rating.opened).map((rating) => rating.id);
+    for (let offset = 0; offset < unopened.length; offset += 250) {
+      void send("/ratings/received/opened", "POST", { ids: unopened.slice(offset, offset + 250) }).catch(() => {
+        // Viewing feedback remains available if recording the first open fails.
+      });
+    }
+  }, [tab, items]);
+
+  return (
+    <main className="pilot-main">
+      <h1 className="pilot-title">My ratings</h1>
+      <nav aria-label="Rating views" className="mt-5 flex flex-wrap gap-2">
+        {ratingTabs.map(({ id, label }) => (
+          <button key={id} type="button" className={tab === id ? "pilot-button" : "pilot-button-secondary"}
+            aria-pressed={tab === id} onClick={() => {
+              setParams(id === "received" ? {} : { tab: id });
+              setReportId(undefined);
+              setNotice("");
+            }}>{label}</button>
+        ))}
+      </nav>
+      {(notice || (given && state?.saved)) && <p className="mt-4 text-success-800" role="status">{notice || "Rating saved."}</p>}
+      {tab === "reports" ? <FiledReports /> : <>
+        {ratings.error && <p className="mt-4 text-red-800" role="alert">{ratings.error}</p>}
+        {!items && !ratings.error && <p className="mt-5" role="status">Loading ratings…</p>}
+        {items?.length === 0 && <p className="pilot-card mt-5">{given ? "You haven’t submitted any ratings yet." : "You haven’t received any ratings yet."}</p>}
+        <ul className="space-y-4 mt-5">
+          {items?.map((rating) => <li key={rating.id} className="pilot-card">
+            <div className="flex flex-wrap justify-between gap-2">
+              <h2 className="font-semibold">{given ? "To" : "From"} {rating.name}</h2>
+              <span className="font-semibold text-primary">{rating.overall} / 5</span>
+            </div>
+            <p className="mt-3 whitespace-pre-wrap break-words">{rating.feedback}</p>
+            <dl className="flex flex-wrap gap-x-5 gap-y-2 mt-3 text-sm text-slate-600">
+              {Object.entries(rating.categories).map(([name, score]) => <div key={name} className="flex gap-1">
+                <dt className="capitalize">{name}</dt><dd>{score} / 5</dd>
+              </div>)}
+            </dl>
+            {given && <>
+              <p className="mt-3 text-sm text-slate-600">{rating.hidden ? "Hidden by moderation" : rating.anonymous ? "Name hidden from recipient" : "Name visible to recipient"}</p>
+              {rating.canOpenProfile && !rating.hidden && <Link className="pilot-link mt-2 inline-block" to={"/professionals/" + rating.personId + "/rate"}>Edit rating</Link>}
+            </>}
+            {!given && rating.reportStatus === "open" && <p className="mt-3 text-sm text-slate-600">Report under review</p>}
+            {!given && rating.reportStatus !== "open" && (reportId === rating.id ? (
+              <ReportForm id={rating.id} cancel={() => setReportId(undefined)} onSent={() => {
+                setReportId(undefined);
+                setNotice("Your report was sent for review.");
+                ratings.refresh();
+              }} />
+            ) : <button className="pilot-button-secondary mt-4" onClick={() => setReportId(rating.id)}>Report rating</button>)}
+          </li>)}
+        </ul>
+      </>}
+    </main>
+  );
+}
