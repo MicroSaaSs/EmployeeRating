@@ -96,6 +96,8 @@ The workspace contains both lockfiles, the CI workflow, versioned PostgreSQL mig
 
 The operator's **Pilot operations** screen supports creating and revoking participant invitations and reviewing aggregate pilot activity. The report includes invitation redemptions, sign-ins, participation and eligibility, ratings opened, and the time to first moderation decision.
 
+Work history imports LinkedIn profile PDFs and Positions CSV files locally. Participants can review estimated dates and see which positions are already saved. **Pilot operations → Companies** lets operators search company names and aliases, preview the affected work history entries, and link spelling variants that refer to the same employer.
+
 Participants can see the outcome of reports they filed. Operators can review resolved reports with their decision history and the rating as it appeared when reported. A later report keeps its own record.
 
 Operators can suspend or restore a participant's access and review the access history. Suspension revokes existing sessions and takes the participant out of the directory while preserving ratings and reports.

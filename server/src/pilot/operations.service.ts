@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { digest, newToken, type SessionUser } from "../auth/auth.service";
 import { clientOrigin } from "../config";
 import { Database } from "../database/database";
+import { linkCompanyName, previewCompanyLink, searchCompanies } from "./companies";
 import { overlapStart, overlapEnd } from "./eligibility";
 
 export interface Invitation {
@@ -74,6 +75,19 @@ export class PilotOperationsService {
        WHERE id = $1 AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > now()`, [id],
     );
     if (!result.rowCount) throw new ConflictException("Only an active unused invitation can be revoked.");
+  }
+
+  companies(term: string, page: number) {
+    return searchCompanies(this.db, term, page);
+  }
+
+  previewCompanyAlias(canonical: string, alias: string) {
+    return previewCompanyLink(this.db, canonical, alias);
+  }
+
+  async saveCompanyAlias(operatorId: string, canonical: string, alias: string) {
+    await this.db.limit("company-link:" + operatorId, 30);
+    return linkCompanyName(this.db, canonical, alias);
   }
 
   async accounts(term: string, suspendedOnly: boolean, page: number) {

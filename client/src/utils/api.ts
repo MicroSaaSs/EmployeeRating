@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { LinkedInSource } from "./linkedinPositions";
 
 export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
@@ -44,6 +45,7 @@ export interface WorkEntry {
   title: string;
   start: string;
   end: string | null;
+  linkedinSource?: LinkedInSource | null;
 }
 
 export const categories = ["technical", "communication", "leadership", "reliability", "teamwork"] as const;

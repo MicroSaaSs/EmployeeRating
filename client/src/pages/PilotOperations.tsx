@@ -3,6 +3,7 @@ import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../providers/AuthProvider";
 import { message, send, useResource } from "../utils/api";
 import PilotAccounts from "./PilotAccounts";
+import PilotCompanies from "./PilotCompanies";
 
 type Invite = {
   id: string;
@@ -173,16 +174,16 @@ function Overview() {
 
 function Operations() {
   const [params, setParams] = useSearchParams();
-  const accounts = params.get("tab") === "accounts";
+  const requested = params.get("tab");
+  const tab = requested === "accounts" || requested === "companies" ? requested : "overview";
   return <main className="pilot-main">
     <h1 className="pilot-title">Pilot operations</h1>
     <nav className="mt-5 flex flex-wrap gap-2" aria-label="Pilot operations views">
-      <button type="button" className={accounts ? "pilot-button-secondary" : "pilot-button"}
-        aria-pressed={!accounts} onClick={() => setParams({})}>Overview</button>
-      <button type="button" className={accounts ? "pilot-button" : "pilot-button-secondary"}
-        aria-pressed={accounts} onClick={() => setParams({ tab: "accounts" })}>Accounts</button>
+      {(["overview", "accounts", "companies"] as const).map(view => <button key={view} type="button"
+        className={(tab === view ? "pilot-button" : "pilot-button-secondary") + " capitalize"}
+        aria-pressed={tab === view} onClick={() => setParams(view === "overview" ? {} : { tab: view })}>{view}</button>)}
     </nav>
-    {accounts ? <PilotAccounts /> : <Overview />}
+    {tab === "accounts" ? <PilotAccounts /> : tab === "companies" ? <PilotCompanies /> : <Overview />}
   </main>;
 }
 

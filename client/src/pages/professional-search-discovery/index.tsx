@@ -40,8 +40,8 @@ export default function ProfessionalSearchDiscovery() {
         <p className="mb-3 mt-1 text-slate-600">A rating requires overlapping employment dates at the same company.</p>
         <Link className="pilot-link" to="/work-history">Add work history</Link>
       </section>}
-      <form className="flex gap-3 mt-6 items-end" onSubmit={search}>
-        <label className="block max-w-md w-full">Name
+      <form className="mt-6 grid max-w-xl gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={search}>
+        <label className="block min-w-0 text-sm font-medium">Name
           <input className="pilot-field mt-1" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
         </label>
         <button className="pilot-button">Search</button>

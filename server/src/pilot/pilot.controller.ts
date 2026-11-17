@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { AuthService } from "../auth/auth.service";
-import { boolean, object, pageNumber, ratingInput, searchTerm, text, workInput } from "./inputs";
+import { boolean, linkedInSourceInput, object, pageNumber, ratingInput, searchTerm, text, workInput } from "./inputs";
 import { PilotOperationsService } from "./operations.service";
 import { PilotService } from "./pilot.service";
 
@@ -24,7 +24,8 @@ export class PilotController {
   @Post("work-history")
   @HttpCode(204)
   async addWork(@Req() req: Request, @Body() body: unknown) {
-    await this.pilot.saveWork((await this.auth.requireUser(req)).id, null, workInput(body));
+    const user = await this.auth.requireUser(req);
+    await this.pilot.saveWork(user.id, null, workInput(body), linkedInSourceInput(object(body).linkedinSource));
   }
 
   @Put("work-history/:id")
@@ -141,6 +142,28 @@ export class PilotController {
   async metrics(@Req() req: Request) {
     await this.auth.requireOperator(req);
     return this.operations.metrics();
+  }
+
+  @Get("pilot/companies")
+  async companies(@Req() req: Request, @Query("q") term: unknown, @Query("page") page: unknown) {
+    await this.auth.requireOperator(req);
+    return this.operations.companies(searchTerm(term), pageNumber(page));
+  }
+
+  @Post("pilot/companies/aliases/preview")
+  @HttpCode(200)
+  async previewCompanyAlias(@Req() req: Request, @Body() body: unknown) {
+    await this.auth.requireOperator(req);
+    const { canonical, alias } = object(body);
+    return this.operations.previewCompanyAlias(text(canonical, "Company name", 1, 120), text(alias, "Alias", 1, 120));
+  }
+
+  @Post("pilot/companies/aliases")
+  @HttpCode(200)
+  async saveCompanyAlias(@Req() req: Request, @Body() body: unknown) {
+    const operator = await this.auth.requireOperator(req);
+    const { canonical, alias } = object(body);
+    return this.operations.saveCompanyAlias(operator.id, text(canonical, "Company name", 1, 120), text(alias, "Alias", 1, 120));
   }
 
   @Get("pilot/accounts")

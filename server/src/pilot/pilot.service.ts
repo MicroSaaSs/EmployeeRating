@@ -2,9 +2,11 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException, U
 import type { Pool, PoolClient } from "pg";
 import { Database } from "../database/database";
 import { overlapStart, overlapEnd } from "./eligibility";
-import { ratingInput, workInput } from "./inputs";
+import { cleanCompany } from "./companies";
+import { linkedInSourceInput, ratingInput, workInput } from "./inputs";
 
-const workQuery = `SELECT w.id, c.name AS company, w.title, w.start_date::text AS start, w.end_date::text AS end
+const workQuery = `SELECT w.id, c.name AS company, w.title, w.start_date::text AS start, w.end_date::text AS end,
+    w.linkedin_source AS "linkedinSource"
   FROM work_history w JOIN companies c ON c.id = w.company_id WHERE w.user_id = $1 ORDER BY w.start_date DESC, w.id`;
 const ratingFields = `r.id, r.overall, r.categories, r.feedback, r.anonymous, r.hidden, r.updated_at AS "updatedAt"`;
 
@@ -28,7 +30,7 @@ export class PilotService {
     if (!result.rowCount) throw new UnauthorizedException("Sign in to continue.");
   }
 
-  async saveWork(userId: string, entryId: string | null, entry: ReturnType<typeof workInput>) {
+  async saveWork(userId: string, entryId: string | null, entry: ReturnType<typeof workInput>, source?: ReturnType<typeof linkedInSourceInput>) {
     await this.db.limit("work:" + userId, 60);
     await this.db.transaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock_shared(114010, 2)");
@@ -50,8 +52,26 @@ export class PilotService {
         );
         if (!updated.rowCount) throw new NotFoundException("Work history entry not found.");
       } else {
+        const sourceKey = source?.company && source.title && source.start && source.end !== "" ? JSON.stringify(source) : null;
+        if (source) {
+          const existing = await client.query<{ same_source: boolean; title: string; start: string; end: string | null }>(
+            `SELECT coalesce(linkedin_source = $3::jsonb, false) AS same_source, title, start_date::text AS start, end_date::text AS end
+             FROM work_history WHERE user_id = $1 AND (company_id = $2 OR linkedin_source = $3::jsonb)`,
+            [userId, company.rows[0].id, sourceKey],
+          );
+          const title = cleanCompany(entry.title).toLowerCase();
+          const duplicate = existing.rows.some(row => {
+            if (row.same_source) return true;
+            const savedTitle = cleanCompany(row.title).toLowerCase();
+            return (savedTitle === title && row.start === entry.start && row.end === entry.end) ||
+              (savedTitle === source.title && !!source.start && row.start.startsWith(source.start) &&
+                (source.end === null ? row.end === null : !!source.end && row.end?.startsWith(source.end)));
+          });
+          if (duplicate) throw new ConflictException("This LinkedIn position is already in your work history.");
+        }
         await client.query(
-          "INSERT INTO work_history (user_id, company_id, title, start_date, end_date) VALUES ($1, $2, $3, $4, $5)", data,
+          "INSERT INTO work_history (user_id, company_id, title, start_date, end_date, linkedin_source) VALUES ($1, $2, $3, $4, $5, $6)",
+          [...data, sourceKey],
         );
       }
     });

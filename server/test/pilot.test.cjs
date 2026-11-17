@@ -9,7 +9,6 @@ const { AuthService, digest, newToken } = require("../dist/auth/auth.service");
 const { LinkedInService } = require("../dist/auth/linkedin.service");
 const { migrate } = require("../dist/database/migrate");
 const { Database } = require("../dist/database/database");
-const { linkCompanyName } = require("../dist/pilot/companies");
 const { PilotOperationsService } = require("../dist/pilot/operations.service");
 
 test("invited colleagues can exchange private ratings and operators can moderate them", async () => {
@@ -159,8 +158,44 @@ test("invited colleagues can exchange private ratings and operators can moderate
 
     await work(alice, "  Same  Company  ", "2021-01-01", "2023-01-01");
     await work(bob, "Same Co", "2023-01-01", null);
-    await linkCompanyName(db, "same company", "same co");
+    const companyAliases = "/pilot/companies/aliases";
+    const aliasBody = { canonical: "Same Company", alias: "Same Co" };
+    assert.equal((await api("/pilot/companies", alice)).status, 403);
+    assert.equal((await api(companyAliases + "/preview", { ...alice, method: "POST", body: aliasBody })).status, 403);
+    assert.equal((await api(companyAliases, { ...alice, method: "POST", body: aliasBody })).status, 403);
+    const aliasPreview = await api(companyAliases + "/preview", { ...operator, method: "POST", body: aliasBody });
+    assert.deepEqual(aliasPreview.json, { ...aliasBody, affectedEntries: 1, alreadyLinked: false });
+    assert.equal((await api("/work-history", bob)).json.history[0].company, "Same Co");
+    const links = await Promise.all([1, 2].map(() => api(companyAliases, { ...operator, method: "POST", body: aliasBody })));
+    assert(links.every(result => result.status === 200));
+    assert.deepEqual(links.map(result => result.json.affectedEntries).sort(), [0, 1]);
+    assert.equal((await api("/work-history", bob)).json.history[0].company, "Same Company");
+    const companies = await api("/pilot/companies?q=same%20co", operator);
+    assert.deepEqual(companies.json.companies.map(({ name, aliases }) => ({ name, aliases })), [
+      { name: "Same Company", aliases: ["Same Co"] },
+    ]);
+    const linkedAlias = await api(companyAliases + "/preview", { ...operator, method: "POST", body: aliasBody });
+    assert.equal(linkedAlias.json.alreadyLinked, true);
     await work(other, "Same Company", "2012-01-01", "2013-01-01");
+    const linkedInPost = (user, body) => api("/work-history", { ...user, method: "POST", body });
+    const importedAlias = await linkedInPost(bob, {
+      company: "Same Co", title: "Engineer", start: "2023-01-15", end: null,
+      linkedinSource: { company: "Same Co", title: "ENGINEER", start: "2023-01", end: null },
+    });
+    assert.equal(importedAlias.status, 409, "The import must match a precise saved date through a company alias");
+
+    const source = { company: "Import Example", title: "Engineer", start: "2022", end: "2022" };
+    const editedPosition = { company: "Import Example", title: "Engineer", start: "2023-02-14", end: "2023-09-01", linkedinSource: source };
+    const concurrentImports = await Promise.all([linkedInPost(other, editedPosition), linkedInPost(other, editedPosition)]);
+    assert.deepEqual(concurrentImports.map(result => result.status).sort(), [204, 409]);
+    assert.equal((await linkedInPost(other, { ...editedPosition, start: "2022-01-01", end: "2022-12-31" })).status, 409,
+      "The original LinkedIn dates must still match after edits");
+    const distinct = { ...editedPosition, start: "2024-01-01", end: null, linkedinSource: { ...source, start: "2024", end: null } };
+    assert.equal((await linkedInPost(other, distinct)).status, 204);
+    const importedHistory = (await api("/work-history", other)).json.history.filter(row => row.linkedinSource);
+    assert.equal(importedHistory.length, 2);
+    assert(importedHistory.some(row => row.start === editedPosition.start && row.linkedinSource.start === "2022"));
+    assert.equal((await api(companyAliases, { ...operator, method: "POST", body: { ...aliasBody, canonical: "Import Example" } })).status, 409);
     assert.deepEqual((await api("/professionals/search?q=bob", alice)).json, {
       professionals: [{ id: bob.id, name: "Bob Pilot", eligible: true }],
       hasMore: false, hasWorkHistory: true,

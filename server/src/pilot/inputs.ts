@@ -37,6 +37,22 @@ export function workInput(body: unknown) {
   return { company, title, start, end };
 }
 
+export function linkedInSourceInput(value: unknown) {
+  if (value === undefined) return undefined;
+  const source = object(value);
+  function period(value: unknown) {
+    if (value === "") return value;
+    if (typeof value === "string" && /^[1-9]\d{3}(?:-(?:0[1-9]|1[0-2]))?$/.test(value)) return value;
+    return date(value, "LinkedIn date");
+  }
+  return {
+    company: cleanCompany(text(source.company, "LinkedIn company", 0, 240)).toLowerCase(),
+    title: cleanCompany(text(source.title, "LinkedIn title", 0, 240)).toLowerCase(),
+    start: period(source.start),
+    end: source.end === null ? null : period(source.end),
+  };
+}
+
 export const categoryNames = ["technical", "communication", "leadership", "reliability", "teamwork"] as const;
 
 function score(value: unknown) {
