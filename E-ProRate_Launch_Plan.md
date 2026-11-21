@@ -132,7 +132,7 @@ A participant-approved live capture produced five positions across four employer
 - [x] Reuse the existing date estimates, required missing-date fields, saved-entry matching, and server duplicate protection. Never save directly from OCR.
 - [x] Remove the failed hosted-browser UI, services, endpoints, automation dependency and public HTML-fetch route.
 - [x] Verify real browser OCR under the app's security policy and with first-party assets. Verify the real tab-sharing permission/preview/capture/review flow with the participant.
-- [ ] Release the same commit through `main-api` and then `main-client`. Verify the API migrations and both production health endpoints.
+- [ ] Release the same commit through `main-server` and then `main-client`. Verify the API migrations and both production health endpoints.
 
 **Evidence:** A browser worker read three visible roles during the participant-approved shared-tab test. Two date labels needed review in the first mixed-language build. English is now the default, and regression tests cover date separators and replacement of old rows when recognized text is corrected. All three previously saved roles were marked **Already saved** after review. The repository uses synthetic images for OCR regression testing.
 
