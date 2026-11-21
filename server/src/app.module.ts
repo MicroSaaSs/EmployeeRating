@@ -6,10 +6,11 @@ import { DatabaseModule } from "./database/database";
 import { PilotController } from "./pilot/pilot.controller";
 import { PilotOperationsService } from "./pilot/operations.service";
 import { PilotService } from "./pilot/pilot.service";
+import { ColleagueDraftsService } from "./pilot/colleague-drafts.service";
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule, AuthModule],
   controllers: [AppController, PilotController],
-  providers: [PilotService, PilotOperationsService],
+  providers: [PilotService, PilotOperationsService, ColleagueDraftsService],
 })
 export class AppModule {}

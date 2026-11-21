@@ -92,7 +92,16 @@ export function parseLinkedInProfilePages(pages: TextItem[][]) {
   }
 }
 
-export async function readLinkedInProfile(file: File) {
+export function parseLinkedInColleaguePages(pages: TextItem[][]) {
+  const positions = parseLinkedInProfilePages(pages);
+  const lines = profileLines(pages[0]);
+  const heading = lines.find(line => experienceHeading.test(line.text.trim()));
+  const nameLine = lines.filter(line => line.size > 18 && (!heading || Math.abs(line.x - heading.x) < 2))
+    .sort((a, b) => b.size - a.size)[0];
+  return { name: nameLine?.text.trim() ?? "", positions };
+}
+
+export async function readLinkedInColleagueProfile(file: File) {
   const [pdfjs, worker] = await Promise.all([
     import("pdfjs-dist"),
     import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
@@ -113,8 +122,12 @@ export async function readLinkedInProfile(file: File) {
       const { items } = await page.getTextContent();
       pages.push(items.filter(item => "str" in item));
     }
-    return parseLinkedInProfilePages(pages);
+    return parseLinkedInColleaguePages(pages);
   } finally {
     await task.destroy();
   }
+}
+
+export async function readLinkedInProfile(file: File) {
+  return (await readLinkedInColleagueProfile(file)).positions;
 }

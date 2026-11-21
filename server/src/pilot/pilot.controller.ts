@@ -1,9 +1,11 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { AuthService } from "../auth/auth.service";
-import { boolean, linkedInSourceInput, object, pageNumber, ratingInput, searchTerm, text, workInput } from "./inputs";
+import { boolean, colleagueDraftInput, linkedInSourceInput, object, pageNumber, ratingInput, searchTerm, text, workInput } from "./inputs";
 import { PilotOperationsService } from "./operations.service";
 import { PilotService } from "./pilot.service";
+import { colleagueSearch, linkedInProfileUrl } from "./linkedin-profile";
+import { ColleagueDraftsService } from "./colleague-drafts.service";
 
 const uuid = new ParseUUIDPipe({ version: "4" });
 const uuidV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -14,7 +16,54 @@ export class PilotController {
     private readonly auth: AuthService,
     private readonly pilot: PilotService,
     private readonly operations: PilotOperationsService,
+    private readonly drafts: ColleagueDraftsService,
   ) {}
+
+  @Get("dashboard")
+  async dashboard(@Req() req: Request) {
+    return this.pilot.dashboard((await this.auth.requireUser(req)).id);
+  }
+
+  @Get("colleague-drafts")
+  async colleagueDrafts(@Req() req: Request) {
+    return this.drafts.list((await this.auth.requireUser(req)).id);
+  }
+
+  @Post("colleague-drafts")
+  async saveColleagueDraft(@Req() req: Request, @Body() body: unknown) {
+    return this.drafts.save((await this.auth.requireUser(req)).id, colleagueDraftInput(body));
+  }
+
+  @Post("colleague-drafts/overlap")
+  @HttpCode(200)
+  async colleagueOverlap(@Req() req: Request, @Body() body: unknown) {
+    const user = await this.auth.requireUser(req);
+    return this.drafts.overlap(user.id, colleagueDraftInput(body).history);
+  }
+
+  @Delete("colleague-drafts/:id")
+  @HttpCode(204)
+  async deleteColleagueDraft(@Req() req: Request, @Param("id", uuid) id: string) {
+    await this.drafts.remove((await this.auth.requireUser(req)).id, id);
+  }
+
+  @Post("colleague-drafts/:id/invitation")
+  @HttpCode(204)
+  async requestColleagueInvite(@Req() req: Request, @Param("id", uuid) id: string) {
+    await this.drafts.requestInvite((await this.auth.requireUser(req)).id, id);
+  }
+
+  @Get("pilot/colleague-invitations")
+  async colleagueInvitations(@Req() req: Request, @Query("page") page: unknown) {
+    await this.auth.requireOperator(req);
+    return this.drafts.requests(pageNumber(page));
+  }
+
+  @Post("pilot/colleague-invitations/:id")
+  async issueColleagueInvite(@Req() req: Request, @Param("id", uuid) id: string) {
+    const operator = await this.auth.requireOperator(req);
+    return this.operations.issueInvite("participant", operator.id, id);
+  }
 
   @Get("work-history")
   async work(@Req() req: Request) {
@@ -46,6 +95,14 @@ export class PilotController {
     await this.pilot.setVisibility((await this.auth.requireUser(req)).id, boolean(object(body).visible));
   }
 
+  @Put("linkedin-profile")
+  @HttpCode(204)
+  async setLinkedInProfile(@Req() req: Request, @Body() body: unknown) {
+    const user = await this.auth.requireUser(req);
+    const { url } = object(body);
+    await this.pilot.setLinkedInProfile(user.id, url === null ? null : linkedInProfileUrl(url));
+  }
+
   @Get("professionals/search")
   async search(
     @Req() req: Request,
@@ -57,7 +114,8 @@ export class PilotController {
     if (eligible !== undefined && eligible !== "0" && eligible !== "1") {
       throw new BadRequestException("Choose whether to show eligible colleagues only.");
     }
-    return this.pilot.search(user.id, searchTerm(term), eligible === "1", pageNumber(page));
+    const query = colleagueSearch(term);
+    return this.pilot.search(user.id, query.term, eligible === "1", pageNumber(page), query.profileUrl);
   }
 
   @Get("professionals/:id")

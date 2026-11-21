@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "E-ProRate LinkedIn Import",
+  "version": "0.1.0",
+  "description": "Import the LinkedIn profile you are viewing into an E-ProRate colleague draft.",
+  "minimum_chrome_version": "102",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": {
+    "default_title": "Import profile to E-ProRate",
+    "default_popup": "popup.html"
+  },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [{
+    "matches": [
+      "http://localhost:4028/*",
+      "https://e-prorate-client-001e23c9f3dd.herokuapp.com/*"
+    ],
+    "js": ["relay.js"],
+    "run_at": "document_idle"
+  }]
+}

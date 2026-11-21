@@ -14,13 +14,38 @@ const ratingFields = `r.id, r.overall, r.categories, r.feedback, r.anonymous, r.
 export class PilotService {
   constructor(private readonly db: Database) {}
 
+  async dashboard(userId: string) {
+    const { rows: [summary] } = await this.db.pool.query<{
+      workHistoryCount: number;
+      directoryVisible: boolean;
+      eligibleColleagueCount: number;
+      unopenedRatingCount: number;
+    }>(
+      `SELECT u.directory_visible AS "directoryVisible",
+         (SELECT count(*)::integer FROM work_history WHERE user_id = u.id) AS "workHistoryCount",
+         (SELECT count(DISTINCT r.user_id)::integer
+          FROM work_history a JOIN work_history r ON a.company_id = r.company_id
+          JOIN users colleague ON colleague.id = r.user_id
+          WHERE a.user_id = u.id AND r.user_id <> u.id
+            AND colleague.directory_visible AND colleague.suspended_at IS NULL
+            AND ${overlapStart} <= ${overlapEnd}) AS "eligibleColleagueCount",
+         (SELECT count(*)::integer FROM ratings
+          WHERE recipient_id = u.id AND NOT hidden AND first_opened_at IS NULL) AS "unopenedRatingCount"
+       FROM users u WHERE u.id = $1 AND u.suspended_at IS NULL`,
+      [userId],
+    );
+    if (!summary) throw new UnauthorizedException("Sign in to continue.");
+    return summary;
+  }
+
   async work(userId: string) {
     const { rows } = await this.db.pool.query(workQuery, [userId]);
     const result = await this.db.pool.query<{ visible: boolean }>(
-      "SELECT directory_visible AS visible FROM users WHERE id = $1 AND suspended_at IS NULL", [userId],
+      `SELECT directory_visible AS visible, linkedin_profile_url AS "linkedinProfileUrl"
+       FROM users WHERE id = $1 AND suspended_at IS NULL`, [userId],
     );
     if (!result.rowCount) throw new UnauthorizedException("Sign in to continue.");
-    return { history: rows, visible: result.rows[0].visible };
+    return { history: rows, ...result.rows[0] };
   }
 
   private async lockActiveAccount(client: PoolClient, userId: string) {
@@ -94,7 +119,15 @@ export class PilotService {
     if (!result.rowCount) throw new UnauthorizedException("Sign in to continue.");
   }
 
-  async search(userId: string, term: string, eligibleOnly: boolean, page: number) {
+  async setLinkedInProfile(userId: string, url: string | null) {
+    await this.db.limit("profile-link:" + userId, 30);
+    const result = await this.db.pool.query(
+      "UPDATE users SET linkedin_profile_url = $2 WHERE id = $1 AND suspended_at IS NULL", [userId, url],
+    );
+    if (!result.rowCount) throw new UnauthorizedException("Sign in to continue.");
+  }
+
+  async search(userId: string, term: string, eligibleOnly: boolean, page: number, profileUrl: string | null = null) {
     const pageSize = 50;
     const { rows } = await this.db.pool.query<{
       professionals: Array<{ id: string; name: string; eligible: boolean }>;
@@ -106,14 +139,16 @@ export class PilotService {
            WHERE a.user_id = $1 AND r.user_id = u.id AND ${overlapStart} <= ${overlapEnd}
          ) AS eligible
          FROM users u
-         WHERE u.directory_visible AND u.suspended_at IS NULL AND u.id <> $1 AND strpos(lower(u.name), lower($2)) > 0
+         WHERE u.directory_visible AND u.suspended_at IS NULL AND u.id <> $1
+           AND CASE WHEN $6::text IS NOT NULL THEN u.linkedin_profile_url = $6
+                    ELSE strpos(lower(u.name), lower($2)) > 0 END
        ), directory_page AS (
          SELECT id, name, eligible FROM candidates WHERE NOT $3 OR eligible
          ORDER BY name, id LIMIT $4 OFFSET $5
        )
        SELECT coalesce((SELECT jsonb_agg(p ORDER BY p.name, p.id) FROM directory_page p), '[]'::jsonb) AS professionals,
          EXISTS (SELECT 1 FROM work_history WHERE user_id = $1) AS "hasWorkHistory"`,
-      [userId, term, eligibleOnly, pageSize + 1, (page - 1) * pageSize],
+      [userId, term, eligibleOnly, pageSize + 1, (page - 1) * pageSize, profileUrl],
     );
     const { professionals, hasWorkHistory } = rows[0];
     return { professionals: professionals.slice(0, pageSize), hasMore: professionals.length > pageSize, hasWorkHistory };

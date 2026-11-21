@@ -98,6 +98,19 @@ test("invited colleagues can exchange private ratings and operators can moderate
 
     assert.equal((await api("/health")).status, 200);
     assert.equal((await api("/auth/session")).status, 204);
+    await db.limit("test-retry-time", 1, "Test launch allowance reached");
+    await assert.rejects(db.limit("test-retry-time", 1, "Test launch allowance reached"), failure => {
+      assert.equal(failure.getStatus(), 429);
+      assert.equal(failure.getResponse().message, "Test launch allowance reached");
+      const reset = Date.parse(failure.getResponse().retryAt);
+      assert.ok(reset > Date.now() && reset <= Date.now() + 3600000);
+      return true;
+    });
+    assert.equal((await api("/dashboard")).status, 401);
+    assert.equal((await api("/work-history/import-linkedin", { method: "POST", body: { url: "https://www.linkedin.com/in/example/" } })).status, 404);
+    assert.equal((await api("/work-history/linkedin-browser", { method: "POST", body: { url: "https://www.linkedin.com/in/example/" } })).status, 404);
+    assert.equal((await api("/work-history/linkedin-browser/00000000-0000-4000-8000-000000000000")).status, 404);
+    assert.equal((await api("/linkedin-profile", { method: "PUT", body: { url: "https://www.linkedin.com/in/example/" } })).status, 401);
     assert.equal((await api("/ratings/mine")).status, 401);
     assert.equal((await api("/auth/linkedin/start", { method: "POST", body: {}, from: "https://other.example" })).status, 403);
     assert.equal((await fetch(url + "/API/auth/linkedin/start", { method: "POST" })).status, 403);
@@ -110,6 +123,13 @@ test("invited colleagues can exchange private ratings and operators can moderate
     assert.equal(providerCalls, 0, "An invalid attempt must fail before the provider code exchange");
 
     const alice = await join("alice", "Alice Pilot", firstInvite);
+    assert.equal((await api("/work-history/import-linkedin", { cookie: alice.cookie, method: "POST", body: { url: "http://127.0.0.1/" } })).status, 404);
+    assert.equal((await api("/work-history/linkedin-browser", { cookie: alice.cookie, method: "POST", body: { url: "http://127.0.0.1/" } })).status, 404);
+    assert.equal((await api("/work-history/linkedin-browser/00000000-0000-4000-8000-000000000000", alice)).status, 404);
+    assert.equal((await api("/work-history/import-linkedin", { cookie: alice.cookie, method: "POST", body: { url: "https://www.linkedin.com/in/example/" }, from: "https://other.example" })).status, 403);
+    assert.deepEqual((await api("/dashboard", alice)).json, {
+      directoryVisible: false, workHistoryCount: 0, eligibleColleagueCount: 0, unopenedRatingCount: 0,
+    });
     for (const browser of [attempt.browser, wrongBrowser.browser]) {
       assert.match((await complete("alice", wrongBrowser.state, browser)).headers.get("location"),
         browser === wrongBrowser.browser ? /dashboard-home$/ : /error=signin/);
@@ -166,10 +186,17 @@ test("invited colleagues can exchange private ratings and operators can moderate
     const aliasPreview = await api(companyAliases + "/preview", { ...operator, method: "POST", body: aliasBody });
     assert.deepEqual(aliasPreview.json, { ...aliasBody, affectedEntries: 1, alreadyLinked: false });
     assert.equal((await api("/work-history", bob)).json.history[0].company, "Same Co");
+    assert.equal((await api("/dashboard", alice)).json.eligibleColleagueCount, 0);
     const links = await Promise.all([1, 2].map(() => api(companyAliases, { ...operator, method: "POST", body: aliasBody })));
     assert(links.every(result => result.status === 200));
     assert.deepEqual(links.map(result => result.json.affectedEntries).sort(), [0, 1]);
     assert.equal((await api("/work-history", bob)).json.history[0].company, "Same Company");
+    assert.equal((await api("/work-history", {
+      ...bob, method: "POST", body: { company: "Same Co", title: "Engineering lead", start: "2023-01-01", end: null },
+    })).status, 204);
+    assert.deepEqual((await api("/dashboard", alice)).json, {
+      directoryVisible: true, workHistoryCount: 1, eligibleColleagueCount: 1, unopenedRatingCount: 0,
+    });
     const companies = await api("/pilot/companies?q=same%20co", operator);
     assert.deepEqual(companies.json.companies.map(({ name, aliases }) => ({ name, aliases })), [
       { name: "Same Company", aliases: ["Same Co"] },
@@ -206,9 +233,39 @@ test("invited colleagues can exchange private ratings and operators can moderate
     assert.deepEqual((await api("/professionals/search?q=Another", alice)).json.professionals, [
       { id: other.id, name: "Another Pilot", eligible: false },
     ]);
+    const profileLink = "https://www.linkedin.com/in/example-colleague/";
+    const saveProfileLink = (user, value) => api("/linkedin-profile", { ...user, method: "PUT", body: { url: value } });
+    const searchLink = (link, user = alice, filters = "") => api("/professionals/search?q=" + encodeURIComponent(link) + filters, user);
+    assert.equal((await saveProfileLink(bob, "http://uk.linkedin.com/in/Example-Colleague/?trk=test#about")).status, 204);
+    assert.equal((await api("/work-history", bob)).json.linkedinProfileUrl, profileLink);
+    assert.equal((await api("/work-history", alice)).json.linkedinProfileUrl, null);
+    assert.deepEqual((await searchLink("linkedin.com/in/Example-Colleague")).json.professionals, [
+      { id: bob.id, name: "Bob Pilot", eligible: true },
+    ]);
+    assert.deepEqual((await searchLink(profileLink, bob)).json.professionals, []);
+    assert.equal((await saveProfileLink(other, profileLink)).status, 204);
+    assert.equal((await searchLink(profileLink)).json.professionals.length, 2,
+      "Member-provided links must not grant exclusive ownership over another person's profile");
+    assert.deepEqual((await searchLink(profileLink, alice, "&eligible=1")).json.professionals, [
+      { id: bob.id, name: "Bob Pilot", eligible: true },
+    ]);
+    assert.equal((await saveProfileLink(other, null)).status, 204);
+    assert.equal((await searchLink(profileLink)).json.professionals.length, 1);
+    for (const invalid of [
+      "https://linkedin.com.evil.example/in/test/", "https://www.linkedin.com/company/test/",
+      "https://user:password@www.linkedin.com/in/test/", "https://www.linkedin.com/in/test/extra/",
+      "javascript:alert(1)", "https://www.linkedin.com/in/test%2Fextra/",
+    ]) {
+      assert.equal((await saveProfileLink(bob, invalid)).status, 400);
+    }
+    assert.equal((await searchLink("https://www.linkedin.com/company/test/")).status, 400);
+    assert.equal((await api("/work-history", bob)).json.linkedinProfileUrl, profileLink);
     assert.equal((await api("/professionals/search?eligible=yes", alice)).status, 400);
     assert.equal((await api("/professionals/search?page=0", alice)).status, 400);
     assert.equal((await api("/directory-visibility", { ...bob, method: "PUT", body: { visible: false } })).status, 204);
+    assert.deepEqual((await searchLink(profileLink)).json.professionals, []);
+    assert.equal((await api("/dashboard", alice)).json.eligibleColleagueCount, 0);
+    assert.equal((await api("/dashboard", bob)).json.directoryVisible, false);
     assert.deepEqual((await api("/professionals/search?q=bob&eligible=1", alice)).json.professionals, []);
     assert.equal((await api("/professionals/" + bob.id, alice)).status, 404);
     assert.equal((await api("/directory-visibility", { ...bob, method: "PUT", body: { visible: true } })).status, 204);
@@ -252,6 +309,8 @@ test("invited colleagues can exchange private ratings and operators can moderate
     const received = (await api("/ratings/mine", bob)).json.received;
     assert.equal(received.length, 1);
     assert.equal(received[0].opened, false);
+    assert.equal((await api("/dashboard", bob)).json.unopenedRatingCount, 1);
+    assert.equal((await api("/dashboard", alice)).json.unopenedRatingCount, 0);
     assert.equal(received[0].name, "Anonymous colleague");
     assert.equal(received[0].authorId, undefined);
     assert.equal(received[0].eligibility, undefined);
@@ -266,6 +325,7 @@ test("invited colleagues can exchange private ratings and operators can moderate
     assert.equal((await api(openedPath, { ...bob, method: "POST", body: openedBody })).status, 204);
     assert.equal((await api(openedPath, { ...bob, method: "POST", body: openedBody })).status, 204);
     assert.equal((await api("/ratings/mine", bob)).json.received[0].opened, true);
+    assert.equal((await api("/dashboard", bob)).json.unopenedRatingCount, 0);
     assert.equal((await api("/ratings/mine", alice)).json.given[0].opened, undefined);
     assert.equal((await api(reportPath, { ...other, method: "POST", body: { reason: "Private rating" } })).status, 404);
     assert.equal((await api(reportPath, { ...bob, method: "POST", body: { reason: "Review the submitted feedback" } })).status, 204);
@@ -314,6 +374,70 @@ test("invited colleagues can exchange private ratings and operators can moderate
     assert.ok(typeof activity.averageReportResponseSeconds === "number" && activity.averageReportResponseSeconds >= 0);
     assert.equal(JSON.stringify(activity).includes(body.feedback), false);
 
+    const draftBody = {
+      name: "Draft Colleague",
+      linkedinProfileUrl: "https://www.linkedin.com/in/draft-colleague/",
+      history: [{ company: "Same Company", title: "Developer", start: "2021-01-01", end: "2022-12-31" }],
+    };
+    const draftPath = "/colleague-drafts";
+    assert.equal((await api(draftPath)).status, 401);
+    assert.equal((await api(draftPath + "/overlap", { method: "POST", body: draftBody })).status, 401);
+    assert.deepEqual((await api(draftPath + "/overlap", { ...alice, method: "POST", body: {
+      ...draftBody, history: [...draftBody.history, { ...draftBody.history[0], company: "Same Co" }],
+    } })).json, { matches: [{ company: "Same Company", start: "2021-01-01", end: "2022-12-31" }] });
+    assert.deepEqual((await api(draftPath + "/overlap", { ...other, method: "POST", body: draftBody })).json, { matches: [] });
+    assert.equal((await api(draftPath + "/overlap", { ...alice, method: "POST", body: {
+      ...draftBody, history: [{ ...draftBody.history[0], start: "invalid" }],
+    } })).status, 400);
+    const draftCreated = await api(draftPath, { ...alice, method: "POST", body: draftBody });
+    assert.equal(draftCreated.status, 201);
+    const draftId = draftCreated.json.id;
+    assert.equal((await api(draftPath, { ...alice, method: "POST", body: draftBody })).json.id, draftId);
+    const correctedDraft = { ...draftBody, name: "Corrected Colleague", history: [
+      { ...draftBody.history[0], title: "Senior Developer", start: "2021-02-17", end: null },
+    ] };
+    assert.equal((await api(draftPath, { ...alice, method: "POST", body: correctedDraft })).json.id, draftId);
+    const correctedSaved = (await api(draftPath, alice)).json;
+    assert.equal(correctedSaved.length, 1);
+    assert.equal(correctedSaved[0].name, correctedDraft.name);
+    assert.deepEqual(correctedSaved[0].history, correctedDraft.history);
+    assert.equal((await api(draftPath, { ...alice, method: "POST", body: draftBody })).json.id, draftId);
+    assert.equal((await api(draftPath, alice)).json.length, 1);
+    assert.deepEqual((await api(draftPath, other)).json, []);
+    assert.deepEqual((await api(draftPath, operator)).json, []);
+    assert.equal((await api(draftPath + "/" + draftId, { ...other, method: "DELETE" })).status, 404);
+    assert.equal((await api(draftPath + "/" + draftId + "/invitation", { ...other, method: "POST" })).status, 404);
+    assert.equal((await api("/professionals/search?q=" + encodeURIComponent(draftBody.linkedinProfileUrl), alice)).json.professionals.length, 0);
+    assert.equal((await api("/work-history", alice)).json.history.length, 1);
+    assert.equal((await api(draftPath, { ...alice, method: "POST", body: { ...draftBody, history: [] } })).status, 400);
+    const requestsPath = "/pilot/colleague-invitations";
+    assert.equal((await api(requestsPath, alice)).status, 403);
+    const requestResults = await Promise.all([1, 2].map(() =>
+      api(draftPath + "/" + draftId + "/invitation", { ...alice, method: "POST" })));
+    assert.deepEqual(requestResults.map(result => result.status).sort(), [204, 409]);
+    assert.equal((await api(draftPath, { ...alice, method: "POST", body: draftBody })).status, 409);
+    const [draftRequest] = (await api(requestsPath, operator)).json.requests;
+    assert.equal(draftRequest.id, draftId);
+    assert.equal(draftRequest.history, undefined);
+    assert.equal((await api(requestsPath + "/" + draftId, { ...alice, method: "POST" })).status, 403);
+    const issuedRequests = await Promise.all([1, 2].map(() =>
+      api(requestsPath + "/" + draftId, { ...operator, method: "POST" })));
+    assert.deepEqual(issuedRequests.map(result => result.status).sort(), [201, 409]);
+    const issuedRequest = issuedRequests.find(result => result.status === 201).json;
+    assert.equal((await api(draftPath, alice)).json[0].invitationStatus, "issued");
+    assert.equal((await api(draftPath + "/" + draftId + "/invitation", { ...alice, method: "POST" })).status, 409);
+    assert.equal((await api(requestsPath, operator)).json.requests.length, 0);
+    assert.equal((await api("/pilot/invitations/" + issuedRequest.id, { ...operator, method: "DELETE" })).status, 204);
+    assert.equal((await api(draftPath, alice)).json[0].invitationStatus, "revoked");
+    assert.equal((await api(draftPath + "/" + draftId + "/invitation", { ...alice, method: "POST" })).status, 204);
+    const replacement = await api(requestsPath + "/" + draftId, { ...operator, method: "POST" });
+    assert.equal(replacement.status, 201);
+    const joinedDraftColleague = await join("invited-draft-colleague", "Draft Colleague", new URLSearchParams(new URL(replacement.json.url).hash.slice(1)).get("invite"));
+    assert.equal((await api(draftPath, alice)).json[0].invitationStatus, "redeemed");
+    assert.equal((await api(draftPath + "/" + draftId, { ...alice, method: "DELETE" })).status, 204);
+    assert.deepEqual((await api(draftPath, alice)).json, []);
+    await db.pool.query("DELETE FROM users WHERE id=$1", [joinedDraftColleague.id]);
+
     const revisedFeedback = "This revised feedback describes a different example from our work together.";
     assert.equal((await api("/ratings/for/" + bob.id, {
       ...alice, method: "PUT", body: { ...body, feedback: revisedFeedback },
@@ -345,6 +469,10 @@ test("invited colleagues can exchange private ratings and operators can moderate
     assert.deepEqual(suspensions.map(({ status }) => status).sort(), [204, 409]);
     assert.equal((await api("/auth/session", bob)).status, 204);
     assert.equal((await api("/ratings/mine", bob)).status, 401);
+    assert.equal((await api("/dashboard", bob)).status, 401);
+    assert.deepEqual((await searchLink(profileLink)).json.professionals, []);
+    assert.equal((await saveProfileLink(bob, null)).status, 401);
+    assert.equal((await api("/dashboard", alice)).json.eligibleColleagueCount, 0);
     assert.equal((await api("/professionals/" + bob.id, alice)).status, 404);
     assert.deepEqual((await api("/professionals/search?q=bob&eligible=1", alice)).json.professionals, []);
     assert.equal((await api("/ratings/for/" + bob.id, { ...alice, method: "PUT", body })).status, 404);

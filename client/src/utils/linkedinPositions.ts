@@ -43,7 +43,7 @@ function dateFromPeriod(period: string, end = false) {
 }
 
 const fields = ["company name", "title", "started on", "finished on"];
-export const currentPosition = /^(?:present|настоящее время|по настоящее время|по н\.\s?в\.)$/iu;
+export const currentPosition = /^(?:present|current|настоящее время|по настоящее время|по н\.\s?в\.)$/iu;
 
 export interface LinkedInSource {
   company: string;
@@ -56,13 +56,16 @@ export function workNameKey(value: string) {
   return value.trim().normalize("NFC").replace(/\s+/g, " ").toLowerCase();
 }
 
+// OCR may interchange Latin C and Cyrillic С in the technology name 1C.
+const workTitleKey = (value: string) => workNameKey(value).replace(/^1с(?=$|[\s:/()-])/u, "1c");
+
 export function matchLinkedInPosition(position: LinkedInPosition, entry: LinkedInSource & { linkedinSource?: LinkedInSource | null }) {
   const { source } = position;
   const saved = entry.linkedinSource;
   if (saved && saved.company === source.company && saved.title === source.title &&
       saved.start === source.start && saved.end === source.end) return true;
 
-  return workNameKey(entry.company) === source.company && workNameKey(entry.title) === source.title &&
+  return workNameKey(entry.company) === source.company && workTitleKey(entry.title) === workTitleKey(source.title) &&
     !!source.start && entry.start.startsWith(source.start) &&
     (source.end === null ? entry.end === null : !!source.end && entry.end?.startsWith(source.end) === true);
 }
@@ -82,6 +85,7 @@ export function linkedInPosition(id: number, company: string, title: string, ori
     originalStart,
     originalEnd,
     endRequired: !current && !end,
+    needsReview: false,
     estimatedDates: Boolean((start && start !== originalStart) || (end && end !== originalEnd)),
   };
 }

@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import type { LinkedInSource } from "./linkedinPositions";
 
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly retryAt?: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   if (options?.body) headers.set("Content-Type", "application/json");
@@ -8,7 +15,9 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
   if (!response.ok) {
     if (response.status === 401) window.dispatchEvent(new Event("session-expired"));
     const body = await response.json().catch(() => null);
-    throw new Error(typeof body?.message === "string" ? body.message : "That request failed. Try again.");
+    const retryAt = typeof body?.retryAt === "string" ? Date.parse(body.retryAt) : NaN;
+    throw new ApiError(typeof body?.message === "string" ? body.message : "That request failed. Try again.", response.status,
+      Number.isFinite(retryAt) ? retryAt : undefined);
   }
   return response.status === 204 ? undefined as T : response.json();
 }

@@ -98,6 +98,64 @@ The operator's **Pilot operations** screen supports creating and revoking partic
 
 Work history imports LinkedIn profile PDFs and Positions CSV files locally. Participants can review estimated dates and see which positions are already saved. **Pilot operations → Companies** lets operators search company names and aliases, preview the affected work history entries, and link spelling variants that refer to the same employer.
 
+The participant dashboard points to work history or eligible colleagues as their account progresses. It shows directory visibility and the count of unopened ratings.
+
+Colleague search accepts LinkedIn profile links added by participants in the work-history directory settings. Links are self-reported. Searches respect directory visibility, suspension, and work-history eligibility.
+
+For colleagues outside the pilot, participants can import a saved LinkedIn PDF into a private draft and request an invitation. Operators review requests under **Pilot operations → Requests** and prepare a single-use participant link. A draft's work history is private to its owner. The colleague completes the existing sign-in and onboarding flow after receiving an invitation.
+
+Shared-date checks use the participant's saved work history and company aliases. A local browser-extension prototype exists, but it is deferred: the product must work without users installing extensions.
+
+### Private draft corrections — 20 November 2026
+
+- [x] Reopen a saved private draft to correct the colleague name, roles and dates before requesting an invitation. Preserve exact saved dates and ongoing positions.
+- [x] Keep the profile link fixed during editing and update the existing record. Cancel leaves the saved record unchanged. Clear overlap results whenever roles or dates change.
+- [x] Retain edits when saving fails, including an invitation requested in the meantime. Keep requested drafts locked under the existing server rule.
+- [x] Validate correction/upsert behavior against isolated PostgreSQL and exercise edit, overlap, cancellation, role removal and invitation conflicts in a browser fixture with in-memory endpoints. No actual colleague draft or invitation was created during these checks.
+
+A participant-approved live capture produced five positions across four employers, including two roles at one employer. The local overlap check returned the expected shared dates. The populated review was left unsaved during the check.
+
+### LinkedIn import — tab sharing, 18 November 2026
+
+**Accepted direction:** Use the participant's normal LinkedIn tab and existing login without installing an extension. The user approved tab sharing after the server fetch and hosted browser experiments failed.
+
+**Current flow:** Profile link → normal Experience tab → native browser tab-sharing permission → preview and optional tab zoom → text-area selection → single-view or continuous local reading → stop → draft roles → existing work-history review and duplicate detection → explicit save.
+
+- [x] Open the Experience page in a normal new tab.
+- [x] Accept only a selected browser tab. Reject whole-screen/window capture and stop those tracks before processing. Do not request audio; stop any unexpected audio tracks.
+- [x] Use tab selection, crop selection and Start reading as the explicit import action; remove the redundant preview-confirmation checkbox. Allow a crop around the Experience column and provide a clear stop control.
+- [x] Run OCR in a browser worker with first-party English/Russian models. Default to English for English pages. No image or recognized-text upload, storage API, or third-party OCR service is used.
+- [x] Guide users through ordered Open → Share → Start reading steps. Keep sharing disabled until the Experience link has been opened. Default to continuous reading with scrolling inside the captured preview. Offer an optional single-view read that stops automatically. Continuous reading has an always-available Stop and review control that cancels in-flight OCR and unlocks review immediately.
+- [x] Read only stable, changed views; unchanged views do not consume the capture limit. Require an explicit text-area selection (or deliberate full-tab override). Use word alignment and confidence to exclude logo glyphs and unreadable lines, trim verification/sticky-title noise, and consolidate small employer-prefix artifacts without combining different titles, dates or employers.
+- [x] Permit raw OCR correction and row discard, and replace the last capture's rows when its text is corrected.
+- [x] Stop capture on the native stop action, page exit, review handoff, five-minute timeout, or 30 different captured views. Terminate the OCR worker when sharing stops. Leave draft roles in page memory for review, not in persistent storage.
+- [x] Reuse the existing date estimates, required missing-date fields, saved-entry matching, and server duplicate protection. Never save directly from OCR.
+- [x] Remove the failed hosted-browser UI, services, endpoints, automation dependency and public HTML-fetch route.
+- [x] Verify real browser OCR under the app's security policy and with first-party assets. Verify the real tab-sharing permission/preview/capture/review flow with the participant.
+- [ ] Release the same commit through `main-api` and then `main-client`. Verify the API migrations and both production health endpoints.
+
+**Evidence:** A browser worker read three visible roles during the participant-approved shared-tab test. Two date labels needed review in the first mixed-language build. English is now the default, and regression tests cover date separators and replacement of old rows when recognized text is corrected. All three previously saved roles were marked **Already saved** after review. The repository uses synthetic images for OCR regression testing.
+
+**Grouped-employer accuracy follow-up, 19 November:** Inspect the actual colleague Experience layout and validate temporary viewport captures. Carry an employer across its grouped roles, exclude location/skill metadata, reset context for individual employers, normalize compact duration suffixes and AI letter lookalikes, and separate disconnected sidebar text from headers. Skip clipped/unreadable date rows until a fuller overlapping view is available. Narrow and wide real-capture regressions both produce exactly five correct roles with no duplicate variants. Add focused regressions for grouped context, duration aliases, right-column contamination and clipped dates. Temporary profile pixels are removed from the local build after validation.
+
+**Colleague import follow-up, 18 November:** Reuse the shared-tab parser inside Find colleagues and Private colleague drafts. A directory link search with no match prefills an inline import; a direct import button also accepts a new link. Preserve uncertain-heading flags, require the colleague’s name and field review, and reuse the private-draft overlap/save endpoints. Directory eligibility still comes from participant records. Closing the panel ends capture. An isolated browser regression exercises link prefill, capture cleanup, real local OCR, role handoff, required-name validation, overlap checking and save payloads using in-memory endpoints; no own-work-history writes or automatic invitation requests occur.
+
+**Edit-pencil/duplicate follow-up, 18 November:** Exclude detached right-edge edit-icon glyphs from header OCR using word coordinates. The glyph had been read as “74”, changing four job titles and preventing saved-entry matches. Preserve actual numeric/version suffixes when they are part of normal title text. Treat Latin C and Cyrillic С as equivalent only in the initial technology label 1C for title matching. A regression reproduces all five reported roles and their saved dates; the browser pixel fixture now includes edit pencils and asserts exact titles.
+
+**Preview-scrolling and accuracy follow-up, 18 November:** Use CaptureController.forwardWheel on the preview, enabled from Start reading or an explicit control with browser-owned permission. Request no focus change after selecting the tab. Default to continuous reading at 100% zoom and warn below 85%. Browser APIs require real user wheel gestures; full-document fitting and unattended scrolling are not offered. Re-read individual date-anchored job headers at higher resolution, preserve unreadable dated roles for review, and replace placeholders when a clearer overlapping view is read. A realistic five-role browser OCR regression at simulated 67% source scale recovers all five titles/employers despite long descriptions and a misleading media caption.
+
+**Earlier single-view follow-up, 18 November:** Add feature-detected Chrome Captured Surface Control zoom buttons, invoked only by the participant with browser-owned permission. Added a single-view mode that automatically releases capture; the later preview-scrolling follow-up makes continuous reading the default again. Zoom may fit shorter histories, but no web API here captures arbitrary offscreen content or guarantees the whole document fits. Zoom is not automatically changed or restored; users can reset it before reading.
+
+**Follow-up, 18 November:** Screenshots of 11 noisy draft variants exposed repeated recognition of unchanged/moving views and icon/header contamination. The follow-up adds the guided single-session UI, stable-view sampling, word confidence/alignment filtering, and targeted draft consolidation. Regression tests cover those cases; OCR remains a draft source requiring review.
+
+**Constraints:** This reads visible pixels rather than another website's DOM, tokens, or cookies. The participant chooses the tab and scrolls it; this is not unattended scraping. Only English and Russian recognition are included. OCR may omit or mispair roles and always requires review. Browser support and native permissions vary; guide unsupported users to desktop Chrome/Edge or the existing PDF/CSV route.
+
+**Deployment:** `prebuild` and `prestart` prepare first-party OCR worker/core/model assets. Both local/API-hosted client serving and the Heroku client proxy allow same-origin workers and WebAssembly compilation while keeping JavaScript eval disabled. No Chrome runtime, remote browser provider, new database schema or new LinkedIn permission is needed.
+
+**Retired experiments:** Public HTML requests returned HTTP 999/auth walls. A headless Playwright browser loaded LinkedIn but the human-verification checkbox repeatedly reset. Cloudflare lists automated browsers as unsupported for production challenges. Those implementations are removed; their browser-launch quotas no longer apply to imports. Basic `openid profile` sign-in continues to authenticate participants and does not grant employment-history or website-cookie access.
+
+References: [Browser tab-capture permissions](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia), [Cloudflare supported browser environments](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/), [LinkedIn sign-in permissions](https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/sign-in-with-linkedin-v2).
+
 Participants can see the outcome of reports they filed. Operators can review resolved reports with their decision history and the rating as it appeared when reported. A later report keeps its own record.
 
 Operators can suspend or restore a participant's access and review the access history. Suspension revokes existing sessions and takes the participant out of the directory while preserving ratings and reports.

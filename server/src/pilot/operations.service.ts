@@ -40,19 +40,27 @@ export interface PilotAccount {
 export class PilotOperationsService {
   constructor(private readonly db: Database) {}
 
-  async issueInvite(role: SessionUser["role"], rateLimitKey: string) {
+  async issueInvite(role: SessionUser["role"], rateLimitKey: string, requestId: string | null = null) {
     const origin = clientOrigin();
     await this.db.limit("invite:" + rateLimitKey, 50);
     const token = newToken();
     const { rows } = await this.db.pool.query<Pick<Invitation, "id" | "expiresAt">>(
-      `WITH issued AS (
-         INSERT INTO invites (digest, role, expires_at) VALUES ($1, $2, now() + interval '7 days')
+      `WITH requested AS (
+         SELECT d.id FROM colleague_drafts d JOIN users u ON u.id=d.owner_id
+         WHERE d.id=$3 AND d.invitation_requested_at IS NOT NULL AND d.invitation_id IS NULL
+           AND u.suspended_at IS NULL FOR UPDATE OF d
+       ), issued AS (
+         INSERT INTO invites (digest, role, expires_at)
+         SELECT $1,$2,now() + interval '7 days' WHERE $3::uuid IS NULL OR EXISTS (SELECT 1 FROM requested)
          RETURNING id, expires_at AS "expiresAt"
        ), recorded AS (
-         UPDATE pilot_activity_counts SET invites_issued = invites_issued + 1 WHERE id
+         UPDATE pilot_activity_counts SET invites_issued = invites_issued + (SELECT count(*) FROM issued) WHERE id
+       ), attached AS (
+         UPDATE colleague_drafts SET invitation_id=issued.id FROM issued WHERE colleague_drafts.id=$3
        )
-       SELECT id, "expiresAt" FROM issued`, [digest(token), role],
+       SELECT id, "expiresAt" FROM issued`, [digest(token), role, requestId],
     );
+    if (!rows[0]) throw new ConflictException("This invitation request is no longer pending.");
     return { ...rows[0], url: origin + "/#invite=" + token };
   }
 

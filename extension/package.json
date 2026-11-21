@@ -1,0 +1,7 @@
+{
+  "name": "e-prorate-browser-import",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/*.test.js" },
+  "devDependencies": { "linkedom": "0.18.12" }
+}

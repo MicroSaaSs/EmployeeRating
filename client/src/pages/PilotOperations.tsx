@@ -4,6 +4,7 @@ import { useAuth } from "../providers/AuthProvider";
 import { message, send, useResource } from "../utils/api";
 import PilotAccounts from "./PilotAccounts";
 import PilotCompanies from "./PilotCompanies";
+import ColleagueInvitationRequests from "./ColleagueInvitationRequests";
 
 type Invite = {
   id: string;
@@ -175,15 +176,16 @@ function Overview() {
 function Operations() {
   const [params, setParams] = useSearchParams();
   const requested = params.get("tab");
-  const tab = requested === "accounts" || requested === "companies" ? requested : "overview";
+  const tab = requested === "accounts" || requested === "companies" || requested === "requests" ? requested : "overview";
   return <main className="pilot-main">
     <h1 className="pilot-title">Pilot operations</h1>
     <nav className="mt-5 flex flex-wrap gap-2" aria-label="Pilot operations views">
-      {(["overview", "accounts", "companies"] as const).map(view => <button key={view} type="button"
+      {(["overview", "accounts", "companies", "requests"] as const).map(view => <button key={view} type="button"
         className={(tab === view ? "pilot-button" : "pilot-button-secondary") + " capitalize"}
         aria-pressed={tab === view} onClick={() => setParams(view === "overview" ? {} : { tab: view })}>{view}</button>)}
     </nav>
-    {tab === "accounts" ? <PilotAccounts /> : tab === "companies" ? <PilotCompanies /> : <Overview />}
+    {tab === "accounts" ? <PilotAccounts /> : tab === "companies" ? <PilotCompanies /> :
+      tab === "requests" ? <ColleagueInvitationRequests /> : <Overview />}
   </main>;
 }
 

@@ -26,16 +26,17 @@ export class Database implements OnApplicationShutdown {
     }
   }
 
-  async limit(bucket: string, maximum: number) {
-    const { rows } = await this.pool.query<{ hits: number }>(
+  async limit(bucket: string, maximum: number, description = "Too many requests. Try again later.") {
+    const { rows } = await this.pool.query<{ hits: number; reset_at: Date }>(
       `INSERT INTO rate_limits (bucket, window_start, hits)
        VALUES ($1, date_trunc('hour', now()), 1)
        ON CONFLICT (bucket, window_start) DO UPDATE SET hits = LEAST(rate_limits.hits + 1, $2 + 1)
-       RETURNING hits`,
+       RETURNING hits, window_start + interval '1 hour' AS reset_at`,
       [bucket, maximum],
     );
     if (rows[0].hits > maximum) {
-      throw new HttpException("Too many requests. Try again later.", HttpStatus.TOO_MANY_REQUESTS);
+      throw new HttpException({ statusCode: HttpStatus.TOO_MANY_REQUESTS, message: description,
+        retryAt: rows[0].reset_at.toISOString() }, HttpStatus.TOO_MANY_REQUESTS);
     }
   }
 

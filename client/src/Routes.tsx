@@ -9,6 +9,8 @@ import ProfessionalProfile from "./pages/professional-profile";
 import RateProfessional from "./pages/rate-professional";
 import MyRatingsDashboard from "./pages/my-ratings-dashboard";
 import WorkHistory from "./pages/WorkHistory";
+import ColleagueDrafts from "./pages/ColleagueDrafts";
+import BrowserImport from "./pages/BrowserImport";
 import Moderation from "./pages/Moderation";
 import PilotOperations from "./pages/PilotOperations";
 import NotFound from "./pages/NotFound";
@@ -25,9 +27,11 @@ export default function Routes() {
             <Route path="/login-register" element={<LoginRegister />} />
             <Route path="/privacy" element={<PilotPolicy privacy />} />
             <Route path="/terms" element={<PilotPolicy />} />
+            <Route path="/browser-import" element={<BrowserImport />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard-home" element={<DashboardHome />} />
               <Route path="/work-history" element={<WorkHistory />} />
+              <Route path="/colleague-drafts" element={<ColleagueDrafts />} />
               <Route path="/professional-search-discovery" element={<ProfessionalSearchDiscovery />} />
               <Route path="/professionals/:id" element={<ProfessionalProfile />} />
               <Route path="/professionals/:id/rate" element={<RateProfessional />} />
