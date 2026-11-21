@@ -67,7 +67,7 @@ export class LinkedInService {
     if (!payload.sub || (Array.isArray(payload.aud) && payload.aud.length > 1)) {
       throw new Error("LinkedIn token did not match this sign-in");
     }
-    const name = typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "Pilot participant";
+    const name = typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "E-ProRate member";
     return { issuer, subject: payload.sub, name: name.slice(0, 150) };
   }
 }

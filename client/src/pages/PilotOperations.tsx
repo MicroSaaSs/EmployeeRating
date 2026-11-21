@@ -162,11 +162,11 @@ function Overview() {
   return <>
     <section className="mt-6" aria-labelledby="activity-heading">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 id="activity-heading" className="text-xl font-semibold">Pilot activity</h2>
+        <h2 id="activity-heading" className="text-xl font-semibold">Activity</h2>
         <button type="button" className="pilot-button-secondary" onClick={metrics.refresh}>Refresh activity</button>
       </div>
       {metrics.error && <p className="text-red-800" role="alert">{metrics.error}</p>}
-      {!metrics.data && !metrics.error && <p role="status">Loading pilot activity…</p>}
+      {!metrics.data && !metrics.error && <p role="status">Loading activity…</p>}
       {metrics.data && <Activity data={metrics.data} />}
     </section>
     <Invitations onIssued={metrics.refresh} />
@@ -178,8 +178,8 @@ function Operations() {
   const requested = params.get("tab");
   const tab = requested === "accounts" || requested === "companies" || requested === "requests" ? requested : "overview";
   return <main className="pilot-main">
-    <h1 className="pilot-title">Pilot operations</h1>
-    <nav className="mt-5 flex flex-wrap gap-2" aria-label="Pilot operations views">
+    <h1 className="pilot-title">Administration</h1>
+    <nav className="mt-5 flex flex-wrap gap-2" aria-label="Administration views">
       {(["overview", "accounts", "companies", "requests"] as const).map(view => <button key={view} type="button"
         className={(tab === view ? "pilot-button" : "pilot-button-secondary") + " capitalize"}
         aria-pressed={tab === view} onClick={() => setParams(view === "overview" ? {} : { tab: view })}>{view}</button>)}

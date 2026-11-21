@@ -1,6 +1,6 @@
 # E-ProRate
 
-E-ProRate is an invite-only pilot for private peer feedback. Participants sign in with LinkedIn, report their own work history, and can rate colleagues when their dates overlap at the same company. The public landing page explains the pilot. The React client and NestJS API share one origin, and PostgreSQL stores the pilot data.
+E-ProRate is a service for private peer feedback. Sign in with LinkedIn to create an account or return to your existing one. Add your own work history to rate colleagues whose dates overlap at the same company. The React client and NestJS API share one origin, and PostgreSQL stores the account and feedback data.
 
 [Launch plan](E-ProRate_Launch_Plan.md) · [Original investigation](E-ProRate_Adjustment_Plan.md)
 
@@ -29,7 +29,7 @@ npm start --prefix client
 
 Open `http://localhost:4028`. Vite sends requests under `/api` to the NestJS server on port `3000`. For same-origin production-mode serving, build the client and run the compiled server from the `server` package. The process serves `client/build` by default.
 
-## Operate the pilot
+## Administration
 
 Run these commands from the repository root after building the server.
 
@@ -39,16 +39,16 @@ Run these commands from the repository root after building the server.
 | Create a single-use operator invite | `npm run pilot:admin --prefix server -- invite --operator` |
 | Prune expired sessions, OAuth attempts, invites, and rate-limit buckets | `npm run pilot:admin --prefix server -- prune` |
 | Match a spelling variant to an existing company | `npm run pilot:admin --prefix server -- link-company-name "Company" "Company Inc."` |
-| View aggregate pilot counts | `npm run pilot:admin --prefix server -- metrics` |
+| View aggregate activity counts | `npm run pilot:admin --prefix server -- metrics` |
 | Fulfill an authenticated account removal request | `npm run pilot:admin --prefix server -- remove-account <user-id>` |
 
-Treat invite links like credentials and share each directly with its intended participant. They expire after seven days. An unused invite can grant access to anyone who obtains its link. Returning participants use the sign-in button without an invite.
+Participant invitations are optional. Accepting a valid single-use invitation links it to the verified LinkedIn account used to sign in. If the member already has an E-ProRate account, their account and work history are reused. Treat invite links like credentials and share each directly with its intended recipient. They expire after seven days. Operator invitations can create an operator account on first sign-in and do not promote an existing participant.
 
 After signing in, the dashboard shows whether you need to add work history or can already rate a colleague. It also shows your directory visibility and new ratings to read. Opt into the directory to let other participants find you. An operator can open **Moderation** to review reports and attribution, hide or reinstate feedback, and pause new submissions. Ask the participant for the account reference shown on their dashboard and confirm the request before running the removal command. It permanently removes the account, sessions, work history, and ratings to or from that account.
 
 To import your LinkedIn Experience, open your profile on desktop, choose **More** or **Resources**, then **Save to PDF**. Select the downloaded PDF under **My work history → Import LinkedIn experience**. You can also select `Positions.csv` from the **Positions** data export. Review the company, title, and dates before saving. Dates that give only a month or year use the first day of the starting period and the last day of the ending period, up to today for the current period. Re-imported positions that match your work history are marked **Already saved**. The browser reads the file locally and sends individual entries when you save them. [Save a profile as a PDF](https://www.linkedin.com/help/linkedin/answer/a541960/) · [Download your LinkedIn data](https://www.linkedin.com/help/linkedin/answer/a1339364/)
 
-Participants can add or remove their own LinkedIn profile link under **My work history → Pilot directory**. Colleague search accepts names and LinkedIn profile links. Matching uses member-provided links and returns visible, active pilot participants. The **Eligible to rate** filter also checks work-history overlap.
+Members can add or remove their own LinkedIn profile link under **My work history → Directory**. Colleague search accepts names and LinkedIn profile links. Matching uses member-provided links and returns visible, active members. The **Eligible to rate** filter also checks work-history overlap.
 
 **My work history → Import LinkedIn experience → Share LinkedIn tab** uses your normal browser and LinkedIn login:
 
@@ -63,17 +63,17 @@ Participants can add or remove their own LinkedIn profile link under **My work h
 
 The unsuccessful hosted-browser and direct-public-request import routes were removed. No browser worker service, extra LinkedIn login, extension, or browser-launch quota is required for tab sharing. The existing PDF/CSV import remains available. OCR can misread dates or company names, so review is required.
 
-On **Find colleagues**, select **Import colleague from LinkedIn**, or search a profile link and select **Import LinkedIn profile** when it has no directory match. The inline importer prefills that link and offers the same shared-tab reading, preview scrolling, local OCR and editable role review as Work history. Enter the colleague’s name, review the fields and choose **Check shared work dates** or **Save private draft**. A saved LinkedIn PDF remains an alternative. The same reader is also available on **My private colleague drafts**. Closing the inline importer releases its capture. Drafts are separate from your own work history. **Request invitation** shares the colleague's name and profile link with pilot operators. An operator can open **Pilot operations → Requests**, prepare a single-use invitation, and copy it for private sharing. A redeemed invitation remains subject to the normal onboarding and work-history checks.
+On **Find colleagues**, select **Import colleague from LinkedIn**, or search a profile link and select **Import LinkedIn profile** when it has no directory match. The inline importer prefills that link and offers the same shared-tab reading, preview scrolling, local OCR and editable role review as Work history. Enter the colleague’s name, review the fields and choose **Check shared work dates** or **Save private draft**. A saved LinkedIn PDF remains an alternative. The same reader is also available on **My private colleague drafts**. Closing the inline importer releases its capture. Drafts are separate from your own work history. **Request invitation** shares the colleague's name and profile link with pilot operators. An operator can open **Administration → Requests**, prepare a single-use invitation, and copy it for private sharing. A redeemed invitation remains subject to the normal onboarding and work-history checks.
 
 On **My private colleague drafts**, choose **Edit draft** to reopen a saved draft before requesting an invitation. Correct the name, roles or dates, recheck shared work dates and choose **Save changes**. Exact saved dates and ongoing roles are preserved; the profile link stays fixed so the same record is updated. **Cancel editing** discards unsaved changes. Drafts with an invitation already requested cannot be changed.
 
 Use **Check shared work dates** to compare reviewed colleague dates with your saved history. The product must work without installing browser extensions. The local [extension prototype](extension/README.md) is deferred; work-history tab sharing uses an explicit browser capture permission rather than LinkedIn's basic sign-in permissions. See the access investigation in [the launch plan](E-ProRate_Launch_Plan.md).
 
-In **Pilot operations**, operators can issue or revoke participant invitations and check aggregate onboarding, rating, and report activity. Copy a new link when it is issued and share it privately. An opening is counted once per rating when the recipient opens the Received view. Account counts cover participants with active access. Rating and report counts reflect the records currently on file. Sign-in counts begin when the activity migration is applied.
+In **Administration**, operators can issue or revoke participant invitations and check aggregate onboarding, rating, and report activity. Copy a new link when it is issued and share it privately. An opening is counted once per rating when the recipient opens the Received view. Account counts cover participants with active access. Rating and report counts reflect the records currently on file. Sign-in counts begin when the activity migration is applied.
 
-Use **Pilot operations → Accounts** to look up a participant by name or account reference and suspend or restore access. Suspension revokes sessions, blocks sign-in, and removes the participant from the directory while keeping their existing ratings and reports. Restoration requires a fresh sign-in. Operators can review the recorded reasons and timestamps in the account's access history.
+Use **Administration → Accounts** to look up a participant by name or account reference and suspend or restore access. Suspension revokes sessions, blocks sign-in, and removes the participant from the directory while keeping their existing ratings and reports. Restoration requires a fresh sign-in. Operators can review the recorded reasons and timestamps in the account's access history.
 
-Use **Pilot operations → Companies** to find a company by its primary name or an existing alias. Choose the primary name, enter the spelling variant, and preview the link. Confirm only when both names refer to the same employer. The link updates matching work history entries and applies to future entries under that alias.
+Use **Administration → Companies** to find a company by its primary name or an existing alias. Choose the primary name, enter the spelling variant, and preview the link. Confirm only when both names refer to the same employer. The link updates matching work history entries and applies to future entries under that alias.
 
 Participants can track their moderation reports in **My ratings → My reports**. Operators can switch between open and resolved reports and see the internal decision history. Each new report preserves the feedback and eligibility evidence at the time it was filed.
 
@@ -107,7 +107,7 @@ Local development runs through Vite and the local API. Production runs on two He
 ## Deploy with the container
 
 1. Prepare an HTTPS origin and managed PostgreSQL database for each environment. Enable LinkedIn OpenID Connect and register `https://YOUR_DOMAIN/api/auth/linkedin/callback` on the corresponding LinkedIn app.
-2. Build the container with `docker build --build-arg VITE_SUPPORT_EMAIL=pilot@example.com -t e-prorate .`. Supply the database URL, `CLIENT_APP_URL`, LinkedIn client ID and secret, and callback URL through your host's runtime secret store. Set `TRUST_PROXY_HOPS` to the actual number of trusted hops if the host restricts direct access and overwrites forwarded headers. Use the database provider's TLS connection settings. Omit query strings from proxy access logs for the LinkedIn callback.
+2. Build the container with `docker build --build-arg VITE_SUPPORT_EMAIL=support@example.com -t e-prorate .`. Supply the database URL, `CLIENT_APP_URL`, LinkedIn client ID and secret, and callback URL through your host's runtime secret store. Set `TRUST_PROXY_HOPS` to the actual number of trusted hops if the host restricts direct access and overwrites forwarded headers. Use the database provider's TLS connection settings. Omit query strings from proxy access logs for the LinkedIn callback.
 3. Use `node dist/cli.js migrate` as the pre-deploy command from the image's server directory. Run the image behind the host's TLS endpoint with port `3000` as the default target. Configure readiness checks on `/api/health`.
 4. Set up database backups, retention, alert delivery, and scheduled pruning via `node dist/cli.js prune`. Verify a backup restore in an isolated database. Keep the previous image available for rollback and assess database compatibility before rolling back a release.
 5. Redeem real LinkedIn invitations with two test accounts before inviting the pilot cohort. Verify sign-in, session persistence across a restart, work history, overlap, anonymous rating, reporting, moderation, and logout.

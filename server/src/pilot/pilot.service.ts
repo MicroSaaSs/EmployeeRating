@@ -188,7 +188,7 @@ export class PilotService {
   }
 
   async saveRating(author: string, recipient: string, rating: ReturnType<typeof ratingInput>) {
-    if (author === recipient) throw new ForbiddenException("You can rate another pilot participant.");
+    if (author === recipient) throw new ForbiddenException("You can only rate another member.");
     await this.db.limit("rating:" + author, 30);
 
     return this.db.transaction(async (client) => {

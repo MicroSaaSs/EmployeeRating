@@ -59,7 +59,7 @@ export default function BrowserImport() {
     </div>}
     {ready && !auth.isLoading && !auth.session && <section className="pilot-card mt-5">
       <h2 className="text-lg font-semibold">Sign in to review the profile</h2>
-      <p className="mt-2 text-slate-600">Your import will be available on the dashboard after sign-in for 15 minutes. New participants need a pilot invitation.</p>
+      <p className="mt-2 text-slate-600">Your import will be available on the dashboard after sign-in for 15 minutes.</p>
       <Link className="pilot-button mt-4" to="/login-register">Sign in to E-ProRate</Link>
     </section>}
   </main>;

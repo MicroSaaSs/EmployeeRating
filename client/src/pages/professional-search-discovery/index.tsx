@@ -49,7 +49,7 @@ export default function ProfessionalSearchDiscovery() {
   return (
     <main className="pilot-main">
       <h1 className="pilot-title">Find colleagues</h1>
-      <p className="mt-2 text-slate-600">Only participants who opted into the pilot directory appear here.</p>
+      <p className="mt-2 text-slate-600">Only members who opted into the directory appear here.</p>
       <div className="mt-3 flex flex-wrap items-center gap-4">
         <button type="button" className="pilot-button-secondary" onClick={() => openImport(name)}>Import colleague from LinkedIn</button>
         <Link className="pilot-link text-sm" to="/colleague-drafts">My private colleague drafts</Link>

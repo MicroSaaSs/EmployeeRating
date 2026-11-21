@@ -2,13 +2,13 @@
 
 ## Goal and first release
 
-Launch E-ProRate on an HTTPS domain with a public landing page and an invite-only pilot. Two invited colleagues should be able to sign in with LinkedIn, add their own work history, and exchange private ratings when their employment dates overlap at the same company. A participant can report a rating, and an operator can review and hide it.
+Launch E-ProRate with a public landing page and LinkedIn sign-up. Two colleagues should be able to sign in, add their own work history, and exchange private ratings when their employment dates overlap at the same company. A member can report a rating, and an administrator can review and hide it.
 
 ## How the service works
 
 ```mermaid
 flowchart TD
-    Invite["Open an invitation"] --> SignIn["Sign in with LinkedIn"]
+    Landing["Open E-ProRate or an invitation"] --> SignIn["Create or reuse an account through LinkedIn"]
     SignIn --> History["Add your work history"]
     History --> Find["Find a colleague in the pilot"]
     Find --> Check{"Same company and overlapping dates?"}
@@ -37,7 +37,7 @@ Start from the restored `codex/restored-main` checkout at `1da60e2`. The TypeScr
 | Phase | Outcome | Depends on |
 | --- | --- | --- |
 | 1. Foundation | Reproducible setup, PostgreSQL, and production hosting | Restored baseline |
-| 2. Sign-in and invitations | An invited participant can sign in securely in production | Phase 1 |
+| 2. Sign-in and invitations | Anyone can sign up with LinkedIn and optionally accept an invitation | Phase 1 |
 | 3. Work history and ratings | Two eligible participants can exchange private ratings | Phase 2 |
 | 4. Launch | Moderation works and the pilot is live on the production domain | Phase 3 |
 | 5. Evaluate and expand | Decide whether to open the next cohort or revise the product | Pilot results |
@@ -55,10 +55,10 @@ Start from the restored `codex/restored-main` checkout at `1da60e2`. The TypeScr
 
 - [ ] **Harden the LinkedIn callback.** Bind a short-lived, single-use OAuth `state` value to the browser that starts sign-in. Reject missing, mismatched, expired, and replayed values. Use LinkedIn’s confidential authorization-code flow and validate the ID token signature, issuer, audience, subject, and expiry. LinkedIn’s documented web sign-in flow uses state for this callback. Use the configured callback and client URLs so local sign-in returns to port `4028` and production returns to the Heroku client origin. [LinkedIn OpenID Connect guide](https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/sign-in-with-linkedin-v2) · [LinkedIn authorization-code flow](https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow) · [OAuth security best practice](https://www.rfc-editor.org/rfc/rfc9700.html)
 - [ ] **Make PostgreSQL the session authority.** Issue a fresh, expiring session after login, store a digest of the session identifier, and revoke the session on logout. Use an `HttpOnly`, `SameSite=Lax` cookie with `Secure` on HTTPS. Return only the display fields needed by the UI from `/api/auth/session`, remove the browser `localStorage` session copy, and strip OAuth codes, provider tokens, and session IDs from logs. Use same-origin requests and reject cross-origin state-changing requests.
-- [ ] **Enforce invitations on the server.** Give the operator a way to issue expiring, single-use invite links. Redeem each link atomically when the invited person completes sign-in. Allow returning participants to sign in directly. Route authenticated users to onboarding or their dashboard and provide a clear recovery message for expired invites and failed sign-in.
+- [ ] **Support sign-up and optional invitations.** Create one account per verified LinkedIn identity. Give an administrator a way to issue expiring, single-use links. Redeem each link atomically and associate it with the authenticated account, whether the account is new or already exists. Route members to their dashboard and explain how to continue if the invitation could not be applied.
 - [ ] **Cover the failure paths.** Add integration checks for invalid OAuth state, session expiry and logout, invitation reuse, and access to protected endpoints without a valid session. Complete a real LinkedIn sign-in in production with a test participant.
 
-**Exit check** — A person with an invite can sign in with LinkedIn, reload, stay signed in after an API restart, and log out. A reused invite or unauthenticated API call grants no access. Verify that both local storage and response bodies are free of session identifiers and provider tokens.
+**Exit check** — A person can sign up with LinkedIn, reload, stay signed in after an API restart, and log out. An existing member can accept an invitation without a second account. Invitation links can be redeemed once, and private API calls require authentication. Verify that both local storage and response bodies are free of session identifiers and provider tokens.
 
 ## Phase 3. Complete the core rating flow
 
@@ -94,15 +94,15 @@ Start from the restored `codex/restored-main` checkout at `1da60e2`. The TypeScr
 
 The workspace contains both lockfiles, the CI workflow, versioned PostgreSQL migrations, the pilot screens, and a deployable container configuration. Local checks covered clean installs, both builds, client type checking, signed ID-token validation with test keys, and the invite, rating, privacy, and moderation flows against PostgreSQL.
 
-The operator's **Pilot operations** screen supports creating and revoking participant invitations and reviewing aggregate pilot activity. The report includes invitation redemptions, sign-ins, participation and eligibility, ratings opened, and the time to first moderation decision.
+The operator's **Administration** screen supports creating and revoking participant invitations and reviewing aggregate pilot activity. The report includes invitation redemptions, sign-ins, participation and eligibility, ratings opened, and the time to first moderation decision.
 
-Work history imports LinkedIn profile PDFs and Positions CSV files locally. Participants can review estimated dates and see which positions are already saved. **Pilot operations → Companies** lets operators search company names and aliases, preview the affected work history entries, and link spelling variants that refer to the same employer.
+Work history imports LinkedIn profile PDFs and Positions CSV files locally. Participants can review estimated dates and see which positions are already saved. **Administration → Companies** lets operators search company names and aliases, preview the affected work history entries, and link spelling variants that refer to the same employer.
 
 The participant dashboard points to work history or eligible colleagues as their account progresses. It shows directory visibility and the count of unopened ratings.
 
 Colleague search accepts LinkedIn profile links added by participants in the work-history directory settings. Links are self-reported. Searches respect directory visibility, suspension, and work-history eligibility.
 
-For colleagues outside the pilot, participants can import a saved LinkedIn PDF into a private draft and request an invitation. Operators review requests under **Pilot operations → Requests** and prepare a single-use participant link. A draft's work history is private to its owner. The colleague completes the existing sign-in and onboarding flow after receiving an invitation.
+For colleagues outside the pilot, participants can import a saved LinkedIn PDF into a private draft and request an invitation. Operators review requests under **Administration → Requests** and prepare a single-use participant link. A draft's work history is private to its owner. The colleague completes the existing sign-in and onboarding flow after receiving an invitation.
 
 Shared-date checks use the participant's saved work history and company aliases. A local browser-extension prototype exists, but it is deferred: the product must work without users installing extensions.
 

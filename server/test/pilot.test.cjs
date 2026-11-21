@@ -11,7 +11,7 @@ const { migrate } = require("../dist/database/migrate");
 const { Database } = require("../dist/database/database");
 const { PilotOperationsService } = require("../dist/pilot/operations.service");
 
-test("invited colleagues can exchange private ratings and operators can moderate them", async () => {
+test("LinkedIn sign-up, invitation linking, private ratings and moderation", async () => {
   const baseUrl = process.env.DATABASE_URL;
   assert.ok(baseUrl, "Set DATABASE_URL to a PostgreSQL database for integration tests");
   const admin = new Pool({ connectionString: baseUrl });
@@ -139,8 +139,10 @@ test("invited colleagues can exchange private ratings and operators can moderate
     identities.set("outside", "Outside Pilot");
     const usedInvite = await begin(firstInvite);
     assert.match((await complete("outside", usedInvite.state, usedInvite.browser)).headers.get("location"), /error=invite/);
-    const noInvite = await begin();
-    assert.match((await complete("outside", noInvite.state, noInvite.browser)).headers.get("location"), /error=invite/);
+    const directMember = await join("outside", "Direct Member");
+    assert.equal(directMember.role, "participant");
+    assert.equal((await api("/pilot/metrics", directMember)).status, 403);
+    assert.equal((await api("/dashboard", directMember)).json.directoryVisible, false);
     const expired = await begin();
     await db.pool.query("UPDATE oauth_attempts SET expires_at = now() WHERE state_digest = $1", [digest(expired.state)]);
     const callsBeforeExpiry = providerCalls;
@@ -361,10 +363,10 @@ test("invited colleagues can exchange private ratings and operators can moderate
     ]);
     const activity = (await api("/pilot/metrics", operator)).json;
     assert.equal(activity.signInsStarted, 10);
-    assert.equal(activity.signInsCompleted, 5);
+    assert.equal(activity.signInsCompleted, 6);
     assert.equal(activity.invitesIssued, 5);
     assert.equal(activity.invitesRedeemed, 4);
-    assert.equal(activity.accounts, 3);
+    assert.equal(activity.accounts, 4);
     assert.equal(activity.accountsWithHistory, 3);
     assert.equal(activity.accountsWithEligibleColleague, 2);
     assert.equal(activity.ratingsOpened, 1);
@@ -432,7 +434,16 @@ test("invited colleagues can exchange private ratings and operators can moderate
     assert.equal((await api(draftPath + "/" + draftId + "/invitation", { ...alice, method: "POST" })).status, 204);
     const replacement = await api(requestsPath + "/" + draftId, { ...operator, method: "POST" });
     assert.equal(replacement.status, 201);
-    const joinedDraftColleague = await join("invited-draft-colleague", "Draft Colleague", new URLSearchParams(new URL(replacement.json.url).hash.slice(1)).get("invite"));
+    const joinedDraftColleague = await join("invited-draft-colleague", "Draft Colleague");
+    const invitationAttempt = await begin(new URLSearchParams(new URL(replacement.json.url).hash.slice(1)).get("invite"));
+    const accepted = await complete("invited-draft-colleague", invitationAttempt.state, invitationAttempt.browser + "; " + joinedDraftColleague.cookie);
+    assert.equal(accepted.headers.get("location"), origin + "/dashboard-home");
+    const acceptedCookie = cookieFrom(accepted, "sid");
+    assert.equal((await api("/auth/session", { cookie: acceptedCookie })).json.user.id, joinedDraftColleague.id);
+    assert.equal((await api("/auth/session", joinedDraftColleague)).status, 204);
+    const { rows: [redeemed] } = await db.pool.query("SELECT redeemed_by FROM invites WHERE id=$1", [replacement.json.id]);
+    assert.equal(redeemed.redeemed_by, joinedDraftColleague.id);
+    assert.equal((await api("/pilot/metrics", operator)).json.invitesRedeemed, activity.invitesRedeemed + 1);
     assert.equal((await api(draftPath, alice)).json[0].invitationStatus, "redeemed");
     assert.equal((await api(draftPath + "/" + draftId, { ...alice, method: "DELETE" })).status, 204);
     assert.deepEqual((await api(draftPath, alice)).json, []);
@@ -478,7 +489,7 @@ test("invited colleagues can exchange private ratings and operators can moderate
     assert.equal((await api("/ratings/for/" + bob.id, { ...alice, method: "PUT", body })).status, 404);
     assert.equal((await api("/ratings/mine", alice)).json.given[0].canOpenProfile, false);
     assert.equal((await api("/moderation?status=open", operator)).json.reports[0].recipient, "Bob Pilot");
-    assert.equal((await api("/pilot/metrics", operator)).json.accounts, 2);
+    assert.equal((await api("/pilot/metrics", operator)).json.accounts, 3);
     assert.ok((await api("/pilot/accounts?suspended=1", operator)).json.accounts[0].suspendedAt);
 
     const blocked = await begin();
@@ -507,6 +518,15 @@ test("invited colleagues can exchange private ratings and operators can moderate
     assert.equal((await api("/auth/session", alice)).status, 204);
     assert.equal((await api("/auth/logout", { ...restoredBob, method: "POST" })).status, 204);
     assert.equal((await api("/auth/session", restoredBob)).status, 204);
+
+    const simultaneous = await Promise.all([1, 2].map(() => join("simultaneous", "Concurrent Member")));
+    assert.equal(simultaneous[0].id, simultaneous[1].id, "Concurrent first sign-ins must create one account");
+    const operatorToken = await invite("operator");
+    const operatorAttempt = await begin(operatorToken);
+    assert.match((await complete("outside", operatorAttempt.state, operatorAttempt.browser)).headers.get("location"), /error=invite/);
+    const { rows: [unused] } = await db.pool.query("SELECT redeemed_at, redeemed_by FROM invites WHERE digest=$1", [digest(operatorToken)]);
+    assert.deepEqual(unused, { redeemed_at: null, redeemed_by: null });
+    assert.equal((await api("/pilot/metrics", directMember)).status, 403);
   } finally {
     await app?.close();
     await admin.query("DROP SCHEMA IF EXISTS " + schema + " CASCADE");

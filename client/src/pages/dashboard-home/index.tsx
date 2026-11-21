@@ -56,7 +56,7 @@ function DashboardCards({ summary }: { summary: DashboardSummary }) {
       </section>
       <section className="pilot-card">
         <h2 className="text-lg font-semibold">Directory visibility</h2>
-        <p className="mt-2 text-slate-600">{directoryVisible ? "Pilot participants can find you by name." : "Your profile is hidden from the pilot directory."}</p>
+        <p className="mt-2 text-slate-600">{directoryVisible ? "Other members can find you by name." : "Your profile is hidden from the directory."}</p>
         <Link className="pilot-link mt-3 inline-block" to={workHistory + "#directory-visibility"}>Change directory visibility</Link>
       </section>
       <section className="pilot-card">

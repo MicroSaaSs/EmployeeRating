@@ -15,8 +15,8 @@ interface Draft {
 
 const statusLabels = {
   draft: "Private draft",
-  requested: "Invitation requested from a pilot operator",
-  issued: "Invitation prepared by a pilot operator",
+  requested: "Invitation request pending",
+  issued: "Invitation prepared by an administrator",
   redeemed: "Invitation redeemed",
   expired: "Invitation expired",
   revoked: "Invitation revoked",
@@ -135,7 +135,7 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
     setNotice("");
     try {
       await send("/colleague-drafts/" + draft.id + (remove ? "" : "/invitation"), remove ? "DELETE" : "POST");
-      setNotice(remove ? "Private draft deleted." : "Invitation requested. A pilot operator can prepare a link to share with your colleague.");
+      setNotice(remove ? "Private draft deleted." : "Invitation requested. An administrator can prepare a link for your colleague.");
       drafts.refresh();
     } catch (failure) {
       setError(message(failure));

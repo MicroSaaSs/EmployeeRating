@@ -157,7 +157,7 @@ export default function WorkHistory() {
   return (
     <main className="pilot-main">
       <h1 className="pilot-title">My work history</h1>
-      <p className="mt-2 text-slate-600">Add the companies and dates you want to use to find eligible colleagues. Your entries are self-reported and stay out of the pilot directory.</p>
+      <p className="mt-2 text-slate-600">Add the companies and dates you want to use to find eligible colleagues. Your work history is private.</p>
       {(error || work.error) && <p className="mt-4 text-red-800" role="alert">{error || work.error}</p>}
       {notice && <p className="mt-4 text-success-800" role="status">{notice}</p>}
       <div className="mt-7 grid items-start gap-5 md:grid-cols-2">
@@ -251,7 +251,7 @@ export default function WorkHistory() {
             </ul>}
           </section>
           <section id="directory-visibility" className="pilot-card scroll-mt-5" aria-labelledby="directory-visibility-title">
-            <h2 id="directory-visibility-title" className="text-lg font-semibold">Pilot directory</h2>
+            <h2 id="directory-visibility-title" className="text-lg font-semibold">Directory</h2>
             {work.data && <label className="mt-3 flex items-start gap-3">
               <input type="checkbox" className="mt-1" checked={work.data.visible} disabled={pending} onChange={(e) => {
                 const visible = e.target.checked;

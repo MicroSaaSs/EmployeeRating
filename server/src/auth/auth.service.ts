@@ -57,25 +57,35 @@ export class AuthService {
     const session = newToken();
     await this.db.transaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [identity.issuer + ":" + identity.subject]);
-      const existing = await client.query<{ id: string; suspended_at: Date | null }>(
-        "SELECT id, suspended_at FROM users WHERE issuer = $1 AND subject = $2 FOR NO KEY UPDATE",
+      const { rows: [existing] } = await client.query<{ id: string; role: SessionUser["role"]; suspended_at: Date | null }>(
+        "SELECT id, role, suspended_at FROM users WHERE issuer = $1 AND subject = $2 FOR NO KEY UPDATE",
         [identity.issuer, identity.subject],
       );
-      if (existing.rows[0]?.suspended_at) throw new AccountSuspendedException();
-      let userId = existing.rows[0]?.id;
-      const joining = !userId;
-      if (!userId) {
-        const invite = await client.query<{ role: SessionUser["role"] }>(
-          `UPDATE invites SET redeemed_at = now()
+      if (existing?.suspended_at) throw new AccountSuspendedException();
+
+      let invitation: Pick<SessionUser, "id" | "role"> | undefined;
+      if (attempt.invite_digest) {
+        const { rows: [activeInvite] } = await client.query<Pick<SessionUser, "id" | "role">>(
+          `SELECT id, role FROM invites
            WHERE digest = $1 AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > now()
-           RETURNING role`, [attempt.invite_digest],
+           FOR UPDATE`, [attempt.invite_digest],
         );
-        if (!invite.rowCount) throw new ForbiddenException("A valid invitation is needed to join the pilot.");
-        const created = await client.query<SessionUser>(
+        if (!activeInvite || (activeInvite.role === "operator" && existing?.role === "participant")) {
+          throw new ForbiddenException("This invitation could not be applied.");
+        }
+        invitation = activeInvite;
+      }
+
+      let userId = existing?.id;
+      if (!userId) {
+        const created = await client.query<{ id: string }>(
           "INSERT INTO users (issuer, subject, name, role) VALUES ($1, $2, $3, $4) RETURNING id",
-          [identity.issuer, identity.subject, identity.name, invite.rows[0].role],
+          [identity.issuer, identity.subject, identity.name, invitation?.role ?? "participant"],
         );
         userId = created.rows[0].id;
+      }
+      if (invitation) {
+        await client.query("UPDATE invites SET redeemed_at = now(), redeemed_by = $2 WHERE id = $1", [invitation.id, userId]);
       }
       if (isToken(previousSession)) await client.query("DELETE FROM sessions WHERE digest = $1", [digest(previousSession)]);
       await client.query(
@@ -85,7 +95,7 @@ export class AuthService {
       await client.query(
         `UPDATE pilot_activity_counts SET sign_ins_completed = sign_ins_completed + $1,
            invites_redeemed = invites_redeemed + $2 WHERE id`,
-        [Number(attempt.counted), Number(joining)],
+        [Number(attempt.counted), Number(Boolean(invitation))],
       );
     });
     return session;

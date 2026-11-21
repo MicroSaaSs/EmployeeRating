@@ -33,7 +33,7 @@ export default function Header() {
         <Link to="/dashboard-home" className="flex gap-2 items-center font-semibold text-primary"><Users aria-hidden="true" size={19} /> E-ProRate</Link>
         <nav aria-label="Main" className="order-last sm:order-none w-full sm:flex-1 flex flex-wrap gap-1">
           {[...links, ...(session?.user.role === "operator"
-            ? [["/moderation", "Moderation"], ["/pilot-operations", "Pilot operations"]]
+            ? [["/moderation", "Moderation"], ["/administration", "Administration"]]
             : [])].map(([path, label]) =>
             <NavLink key={path} to={path} className={({ isActive }) =>
               "px-2.5 py-1.5 rounded-md text-sm " + (isActive ? "bg-primary-50 text-primary font-semibold" : "text-slate-600 hover:bg-slate-50")

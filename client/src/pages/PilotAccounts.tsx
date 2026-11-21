@@ -66,7 +66,7 @@ export default function PilotAccounts() {
     setError("");
     try {
       await send("/pilot/accounts/" + selected.id + "/access", "PUT", { suspended, note });
-      setNotice(suspended ? "Pilot access suspended." : "Pilot access restored.");
+      setNotice(suspended ? "Account access suspended." : "Account access restored.");
       setSelected(undefined);
       setNote("");
     } catch (failure) {
