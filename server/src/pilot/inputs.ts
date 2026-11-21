@@ -66,6 +66,21 @@ export function linkedInSourceInput(value: unknown) {
   };
 }
 
+export function workImportInput(body: unknown) {
+  const { entries } = object(body);
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 100) {
+    throw new BadRequestException("Select between 1 and 100 roles to import.");
+  }
+  return entries.map((value, index) => {
+    try {
+      return { entry: workInput(value), source: linkedInSourceInput(object(value).linkedinSource) };
+    } catch (failure) {
+      if (!(failure instanceof BadRequestException)) throw failure;
+      throw new BadRequestException(`Role ${index + 1}. ${failure.message}`);
+    }
+  });
+}
+
 export const categoryNames = ["technical", "communication", "leadership", "reliability", "teamwork"] as const;
 
 function score(value: unknown) {

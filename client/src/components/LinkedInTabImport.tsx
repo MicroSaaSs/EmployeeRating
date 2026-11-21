@@ -6,8 +6,8 @@ import { captureChanged, capturedRoleKey, createTabCaptureController, fullCaptur
 
 export interface LinkedInTabProfile { linkedinProfileUrl: string; positions: CapturedRole[] }
 
-export default function LinkedInTabImport({ url, disabled, onImported, subject = "self" }: {
-  url: string; disabled: boolean; onImported: (profile: LinkedInTabProfile) => void; subject?: "self" | "colleague";
+export default function LinkedInTabImport({ url, disabled, onImported, subject = "self", compact = false }: {
+  url: string; disabled: boolean; onImported: (profile: LinkedInTabProfile) => void; subject?: "self" | "colleague"; compact?: boolean;
 }) {
   const supported = typeof navigator.mediaDevices?.getDisplayMedia === "function";
   let profile = "";
@@ -301,19 +301,24 @@ export default function LinkedInTabImport({ url, disabled, onImported, subject =
   }
 
   const opened = !!profile && openedProfile === profile;
+  const Settings = compact ? "details" : "div";
   return <div className="mt-4 space-y-4">
     <ol className="space-y-3" aria-label="LinkedIn import steps">
+      {(!compact || (!opened && supported)) &&
       <li className="rounded-lg border border-border p-3">
         <p className="text-sm font-semibold">1. Open {subject === "colleague" ? "their" : "your"} Experience page</p>
         <p className="mt-1 text-xs text-slate-600">Open LinkedIn, then return here to share that tab.</p>
         <a className={"pilot-button-secondary mt-2" + (sharing || requesting ? " pointer-events-none opacity-50" : "")} href={experienceUrl} target="_blank" rel="noopener noreferrer" aria-disabled={sharing || requesting} tabIndex={sharing || requesting ? -1 : 0} onClick={event => { if (sharing || requesting) event.preventDefault(); else openProfile(event); }}>Open LinkedIn Experience</a>
-      </li>
+      </li>}
+      {(!compact || (opened && !sharing && supported)) &&
       <li className={"rounded-lg border border-border p-3" + (!opened ? " bg-slate-50" : "")}>
         <p className="text-sm font-semibold">2. Share the LinkedIn tab</p>
         <p className="mt-1 text-xs text-slate-600">{!opened ? "Complete step 1 to continue." : sharing ? "Tab connected. Continue to step 3." : "Choose your LinkedIn Experience tab in the browser prompt."}</p>
         {!sharing && <button type="button" className="pilot-button mt-2" disabled={disabled || requesting || !supported || !opened} onClick={() => void share()}>{requesting ? "Choose the LinkedIn tab…" : "Share LinkedIn tab"}</button>}
+        {compact && !requesting && <a className="pilot-link ml-3 text-sm" href={experienceUrl} target="_blank" rel="noopener noreferrer" onClick={openProfile}>Reopen Experience</a>}
         {sharing && !running && <button type="button" className="pilot-link mt-2 text-xs" onClick={() => stop("Sharing cancelled. Your saved work history has not changed.")}>Cancel sharing</button>}
-      </li>
+      </li>}
+      {(!compact || sharing) &&
       <li className={"rounded-lg border border-border p-3" + (!sharing ? " bg-slate-50" : "")}>
         <div className={"flex flex-wrap items-center justify-between gap-2" + (running ? " sticky top-3 z-10 bg-white py-2" : "")}>
           <p className="text-sm font-semibold">3. {running ? "Reading LinkedIn Experience" : subject === "colleague" ? "Read their work history" : "Read your work history"}</p>
@@ -323,6 +328,10 @@ export default function LinkedInTabImport({ url, disabled, onImported, subject =
         {sharing && <div className="mt-3 space-y-3">
           <p className="break-all text-xs text-slate-600">Sharing: {sharedName}</p>
           {!running && <>
+            <p className="text-sm">Drag around the <strong>job titles, companies and dates</strong> in the preview. Exclude logos, the top navigation and the sidebar.</p>
+            {compact && <button type="button" className="pilot-link text-xs" onClick={() => stop("Sharing cancelled.")}>Cancel sharing</button>}
+            <Settings className="space-y-3 rounded-lg bg-slate-50 p-3">
+              {compact && <summary className="cursor-pointer text-sm font-medium">Capture settings</summary>}
             <div className="space-y-2 rounded-lg bg-slate-50 p-3">
               <p className="text-sm font-medium">Keep the text readable</p>
               <p className="text-xs text-slate-600">100% zoom is recommended. Read several overlapping views by scrolling here instead of shrinking the whole page.</p>
@@ -337,13 +346,13 @@ export default function LinkedInTabImport({ url, disabled, onImported, subject =
                 <p className="text-xs text-slate-600">Chrome may ask permission to change the shared tab’s zoom. This changes LinkedIn itself; reset it here before reading if you want its usual size.</p>
               </> : <p className="text-xs text-slate-600">This browser does not expose tab zoom controls. Use the zoom menu in your LinkedIn tab, then return here.</p>}
             </div>
-            <p className="text-sm">Drag around the <strong>job titles, companies and dates</strong> in the preview. Exclude logos, the top navigation and the sidebar.</p>
             <label className="block text-sm font-medium">Text language
               <select className="pilot-field mt-1" value={language} onChange={event => setLanguage(event.target.value as "eng" | "eng+rus")}><option value="eng">English</option><option value="eng+rus">English and Russian</option></select>
             </label>
             <label className="block text-sm font-medium">Reading mode
               <select className="pilot-field mt-1" value={mode} onChange={event => setMode(event.target.value as "single" | "scroll")}><option value="scroll">Continuous — scroll in this preview</option><option value="single">One visible view — stop automatically</option></select>
             </label>
+            </Settings>
           </>}
           {scrollSupported ? <div className="rounded-lg bg-primary-50 p-3 text-sm">
             {previewScroll ? <p>Scroll over the preview below to move LinkedIn. Stay on this page and pause briefly at each job header.</p> : <><p>Scroll LinkedIn from this preview without switching tabs. Your browser may ask permission to control the shared tab.</p><button type="button" className="pilot-button-secondary mt-2" disabled={scrollRequest} onClick={() => void enablePreviewScroll()}>{scrollRequest ? "Waiting for browser permission…" : "Enable scrolling in preview"}</button></>}
@@ -364,10 +373,10 @@ export default function LinkedInTabImport({ url, disabled, onImported, subject =
           </>}
           {running && <p className="text-sm">{mode === "single" ? "Keep this view still. Reading and sharing will stop automatically after this view is recognized." : <>Scroll over the preview and pause at each job header. Reading continues automatically. Select <strong>Stop and review</strong> when you reach the end.</>}</p>}
         </div>}
-      </li>
+      </li>}
     </ol>
-    {!supported && <p className="rounded-lg bg-primary-50 p-3 text-sm text-slate-700">Tab sharing is unavailable in this browser. Open E-ProRate in desktop Chrome or Edge, or import a file below.</p>}
-    <p className="text-xs text-slate-600">Only the selected tab is shared, without audio. Recognition stays in this browser. Sharing ends when you stop, leave this page, reach 30 different views or after 5 minutes.</p>
+    {!supported && <p className="rounded-lg bg-primary-50 p-3 text-sm text-slate-700">Tab sharing is unavailable in this browser. Use desktop Chrome or Edge, or upload a file.</p>}
+    {(!compact || sharing || requesting) && <p className="text-xs text-slate-600">Only the selected tab is shared, without audio. Sharing stops when you leave this import, after 30 views, or after 5 minutes.</p>}
     {error && <p className="text-sm text-red-800" role="alert">{error}</p>}
     {status && <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700" role="status">{status}</p>}
     {readingIssues && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900" role="alert">{readingIssues}</p>}
@@ -378,11 +387,11 @@ export default function LinkedInTabImport({ url, disabled, onImported, subject =
     </details>}
     {!running && roles.length > 0 && <section className="rounded-lg border border-border p-3" aria-label="Roles captured from your LinkedIn tab">
       <h3 className="text-sm font-semibold">{roles.length} draft {roles.length === 1 ? "role" : "roles"} ready to review</h3>
-      <p className="mt-1 text-xs text-slate-600">Check each company, title and date. Discard incorrect rows before continuing.</p>
+      {!compact && <><p className="mt-1 text-xs text-slate-600">Check each company, title and date. Discard incorrect rows before continuing.</p>
       <ul className="mt-2 divide-y divide-border">{roles.map(role => <li key={capturedRoleKey(role)} className="flex items-start justify-between gap-2 py-2 text-sm">
         <div className="min-w-0 break-words"><p className="font-medium">{role.title || "Job title needs review"}</p><p>{role.company || "Company needs review"}</p><p className="text-slate-600">{role.start} to {role.end}</p>{role.needsReview && <p className="text-xs font-medium text-amber-900">Unclear text — check this role before saving.</p>}</div>
         <button type="button" className="pilot-link shrink-0 text-xs" aria-label={"Discard " + role.title + " at " + role.company} onClick={() => { const key = capturedRoleKey(role); discarded.current.add(key); updateRoles(rolesRef.current.filter(item => capturedRoleKey(item) !== key)); }}>Discard</button>
-      </li>)}</ul>
+      </li>)}</ul></>}
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className="pilot-button" disabled={disabled} onClick={() => { const result = { linkedinProfileUrl: sourceUrl.current, positions: roles }; stop(); onImported(result); clearDrafts(); }}>Review captured roles</button>
         <button type="button" className="pilot-button-secondary" onClick={() => { clearDrafts(); setStatus("Captured drafts cleared. Your saved work history is unchanged."); }}>Clear captures</button>

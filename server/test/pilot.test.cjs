@@ -224,6 +224,18 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     const importedHistory = (await api("/work-history", other)).json.history.filter(row => row.linkedinSource);
     assert.equal(importedHistory.length, 2);
     assert(importedHistory.some(row => row.start === editedPosition.start && row.linkedinSource.start === "2022"));
+    const importPath = "/work-history/import";
+    const bulkRole = { company: "Bulk Example", title: "Engineer", start: "2020-01-01", end: "2021-12-31" };
+    const bulkBody = { entries: [bulkRole, { ...bulkRole, start: "invalid" }] };
+    assert.equal((await api(importPath, { method: "POST", body: bulkBody })).status, 401);
+    assert.equal((await api(importPath, { ...other, method: "POST", body: bulkBody })).status, 400);
+    assert.equal((await api("/work-history", other)).json.history.some(row => row.company === bulkRole.company), false);
+    const validBulk = { entries: [bulkRole, editedPosition, bulkRole, { ...bulkRole, title: "Analyst" }] };
+    const bulkResults = await Promise.all([1, 2].map(() => api(importPath, { ...other, method: "POST", body: validBulk })));
+    assert.deepEqual(bulkResults.map(result => result.status), [200, 200]);
+    assert.deepEqual(bulkResults.map(result => result.json).sort((a, b) => a.saved - b.saved), [{ saved: 0, skipped: 4 }, { saved: 2, skipped: 2 }]);
+    const savedBulk = (await api("/work-history", other)).json.history.filter(row => row.company === bulkRole.company);
+    assert.deepEqual(savedBulk.map(row => row.title).sort(), ["Analyst", "Engineer"]);
     assert.equal((await api(companyAliases, { ...operator, method: "POST", body: { ...aliasBody, canonical: "Import Example" } })).status, 409);
     assert.deepEqual((await api("/professionals/search?q=bob", alice)).json, {
       professionals: [{ id: bob.id, name: "Bob Pilot", eligible: true }],

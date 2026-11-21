@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { AuthService } from "../auth/auth.service";
-import { boolean, colleagueDraftInput, linkedInSourceInput, object, pageNumber, ratingInput, searchTerm, text, workInput } from "./inputs";
+import { boolean, colleagueDraftInput, linkedInSourceInput, object, pageNumber, ratingInput, searchTerm, text, workImportInput, workInput } from "./inputs";
 import { PilotOperationsService } from "./operations.service";
 import { PilotService } from "./pilot.service";
 import { colleagueSearch, linkedInProfileUrl } from "./linkedin-profile";
@@ -75,6 +75,13 @@ export class PilotController {
   async addWork(@Req() req: Request, @Body() body: unknown) {
     const user = await this.auth.requireUser(req);
     await this.pilot.saveWork(user.id, null, workInput(body), linkedInSourceInput(object(body).linkedinSource));
+  }
+
+  @Post("work-history/import")
+  @HttpCode(200)
+  async importWork(@Req() req: Request, @Body() body: unknown) {
+    const user = await this.auth.requireUser(req);
+    return this.pilot.importWork(user.id, workImportInput(body));
   }
 
   @Put("work-history/:id")

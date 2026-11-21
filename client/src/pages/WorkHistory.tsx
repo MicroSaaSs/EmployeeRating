@@ -1,7 +1,11 @@
 import { useRef, useState, type FormEvent } from "react";
+import { ChevronDown, FileUp, Pencil, Plus, Trash2 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { message, send, useResource, type WorkEntry } from "../utils/api";
-import { linkedInPosition, matchLinkedInPosition, parseLinkedInPositions, workNameKey, type LinkedInPosition } from "../utils/linkedinPositions";
-import LinkedInTabImport, { type LinkedInTabProfile } from "../components/LinkedInTabImport";
+import { linkedInPosition, parseLinkedInPositions, type LinkedInPosition } from "../utils/linkedinPositions";
+import type { LinkedInTabProfile } from "../components/LinkedInTabImport";
+import { ImportReview, ImportSource, WorkFields, matchesSavedRole, maxImportRoles, workDates, workFieldsIssue,
+  type EntryFields, type ImportMode } from "./work-history/WorkHistoryImport";
 
 const empty = { company: "", title: "", start: "", end: "" };
 
@@ -39,22 +43,33 @@ function LinkedInProfileField({ savedUrl, disabled, onSaved }: {
           setNotice("");
         }} />
     </label>
-    <p id="linkedin-profile-help" className="mt-2 text-sm text-slate-600">Add your own profile link so colleagues can search for it when you appear in the directory. This link is self-reported. Leave it blank to remove it.</p>
+    <p id="linkedin-profile-help" className="mt-2 text-sm text-slate-600">Members can search for this link when your profile is visible. Clear the field to remove the link.</p>
     <button className="pilot-button-secondary mt-3" disabled={disabled || pending}>{pending ? "Saving…" : "Save profile link"}</button>
     {error && <p className="mt-2 text-sm text-red-800" role="alert">{error}</p>}
     {notice && <p className="mt-2 text-sm text-success-800" role="status">{notice}</p>}
   </form>;
 }
 
+function focusSection(id: string) {
+  requestAnimationFrame(() => {
+    const section = document.getElementById(id);
+    section?.focus({ preventScroll: true });
+    section?.scrollIntoView({ block: "nearest" });
+  });
+}
+
 export default function WorkHistory() {
   const work = useResource<{ history: WorkEntry[]; visible: boolean; linkedinProfileUrl: string | null }>("/work-history");
+  const { hash } = useLocation();
   const [entry, setEntry] = useState(empty);
   const [editing, setEditing] = useState<string>();
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [mode, setMode] = useState<ImportMode>("file");
   const [positions, setPositions] = useState<LinkedInPosition[]>([]);
-  const [reviewing, setReviewing] = useState<LinkedInPosition>();
-  const [importFileName, setImportFileName] = useState("");
+  const [selection, setSelection] = useState<ReadonlyMap<number, boolean>>(new Map());
+  const [source, setSource] = useState("");
   const [profileUrl, setProfileUrl] = useState<string>();
-  const [importedUrl, setImportedUrl] = useState("");
   const [reading, setReading] = useState(false);
   const [importError, setImportError] = useState("");
   const [error, setError] = useState("");
@@ -62,22 +77,48 @@ export default function WorkHistory() {
   const [pending, setPending] = useState(false);
   const companyField = useRef<HTMLInputElement>(null);
   const today = new Date().toISOString().slice(0, 10);
+  const saved = work.data?.history ?? [];
+  const selected = new Set(positions.filter(role =>
+    !workFieldsIssue(role.entry, today, role.endRequired) && !saved.some(item => matchesSavedRole(role, item)) &&
+    (selection.get(role.id) ?? !role.needsReview)).map(role => role.id));
 
   function resetEntry() {
     setEntry(empty);
     setEditing(undefined);
-    setReviewing(undefined);
+    setEditorOpen(false);
+  }
+
+  function openEditor(item?: WorkEntry) {
+    setEditing(item?.id);
+    setEntry(item ? { company: item.company, title: item.title, start: item.start, end: item.end ?? "" } : empty);
+    setEditorOpen(true);
+    setError("");
+    setNotice("");
+    requestAnimationFrame(() => companyField.current?.focus());
+  }
+
+  function openImport() {
+    setImportOpen(true);
+    setImportError("");
+    focusSection("import-source-title");
+  }
+
+  function acceptPositions(roles: LinkedInPosition[], label: string) {
+    setPositions(roles);
+    setSource(label);
+    setSelection(new Map());
+    setImportError("");
+    setError("");
+    setNotice("");
+    setImportOpen(false);
+    focusSection("review-history-title");
   }
 
   function acceptLinkedInProfile(imported: LinkedInTabProfile) {
-    const roles = imported.positions.map((role, index) => ({ ...linkedInPosition(index, role.company, role.title, role.start, role.end), needsReview: role.needsReview ?? false }));
-    setPositions(roles);
-    setImportedUrl(imported.linkedinProfileUrl);
-    setImportFileName("");
-    setImportError("");
-    const firstNew = roles.find(role => !work.data?.history.some(saved => matchLinkedInPosition(role, saved)));
-    if (firstNew) review(firstNew);
-    else resetEntry();
+    const roles = imported.positions.map((role, index) => ({
+      ...linkedInPosition(index, role.company, role.title, role.start, role.end), needsReview: role.needsReview ?? false,
+    }));
+    acceptPositions(roles, "Shared LinkedIn tab");
   }
 
   async function readPositions(file: File) {
@@ -86,13 +127,10 @@ export default function WorkHistory() {
     try {
       if (file.size > 2 * 1024 * 1024) throw new Error("Choose a file smaller than 2 MB.");
       const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
-      const imported = isPdf
+      const roles = isPdf
         ? await (await import("../utils/linkedinProfile")).readLinkedInProfile(file)
         : parseLinkedInPositions(await file.text());
-      setPositions(imported);
-      setImportFileName(file.name);
-      setImportedUrl("");
-      if (reviewing) resetEntry();
+      acceptPositions(roles, file.name);
     } catch (failure) {
       setImportError(message(failure));
     } finally {
@@ -100,34 +138,16 @@ export default function WorkHistory() {
     }
   }
 
-  function review(position: LinkedInPosition) {
-    setEditing(undefined);
-    setReviewing(position);
-    setEntry(position.entry);
-    setError("");
-    setNotice("");
-    companyField.current?.focus();
-  }
-
-  function editSaved(item: WorkEntry) {
-    setReviewing(undefined);
-    setEditing(item.id);
-    setEntry({ company: item.company, title: item.title, start: item.start, end: item.end || "" });
-    setError("");
-    setNotice("");
-    companyField.current?.focus();
-  }
-
-  async function change(run: () => Promise<void>, success: string) {
+  async function change(run: () => Promise<string>) {
     setPending(true);
     setError("");
     setNotice("");
     try {
-      await run();
-      setNotice(success);
+      setNotice(await run());
       work.refresh();
     } catch (failure) {
       setError(message(failure));
+      focusSection("work-history-error");
     } finally {
       setPending(false);
     }
@@ -135,158 +155,123 @@ export default function WorkHistory() {
 
   function save(event: FormEvent) {
     event.preventDefault();
-    if (reviewing && work.data?.history.some(item =>
-      matchLinkedInPosition(reviewing, item) ||
-      (workNameKey(item.company) === workNameKey(entry.company) && workNameKey(item.title) === workNameKey(entry.title) &&
-        item.start === entry.start && (item.end ?? "") === entry.end)
-    )) {
-      setError("This entry is already in your work history.");
-      setNotice("");
+    const issue = workFieldsIssue(entry, today);
+    if (issue) {
+      setError(issue);
       return;
     }
     void change(async () => {
-      await send(editing ? "/work-history/" + editing : "/work-history", editing ? "PUT" : "POST", {
-        ...entry, end: entry.end || null,
-        ...(reviewing && { linkedinSource: reviewing.source }),
-      });
-      if (reviewing) setPositions(current => current.filter(position => position.id !== reviewing.id));
+      await send(editing ? "/work-history/" + editing : "/work-history", editing ? "PUT" : "POST", { ...entry, end: entry.end || null });
       resetEntry();
-    }, "Work history saved.");
+      focusSection("saved-work-heading");
+      return editing ? "Role updated." : "Role added.";
+    });
   }
 
-  return (
-    <main className="pilot-main">
-      <h1 className="pilot-title">My work history</h1>
-      <p className="mt-2 text-slate-600">Add the companies and dates you want to use to find eligible colleagues. Your work history is private.</p>
-      {(error || work.error) && <p className="mt-4 text-red-800" role="alert">{error || work.error}</p>}
-      {notice && <p className="mt-4 text-success-800" role="status">{notice}</p>}
-      <div className="mt-7 grid items-start gap-5 md:grid-cols-2">
-        <form className="pilot-card min-w-0" onSubmit={save}>
-          <h2 id="work-history-editor" className="text-lg font-semibold">{reviewing ? "Review LinkedIn entry" : editing ? "Edit an entry" : "Add an entry"}</h2>
-          <fieldset disabled={pending || reading} aria-labelledby="work-history-editor" className="mt-4 min-w-0 space-y-4">
-            {reviewing && <div className="space-y-1 rounded-lg bg-primary-50 px-3 py-2.5 text-sm text-slate-700">
-              <p><span className="font-semibold">Dates from LinkedIn</span> · {reviewing.originalStart || "No start date"} to {reviewing.originalEnd || "present"}</p>
-              {reviewing.estimatedDates && <p>Estimated dates use the start or end of the month or year shown. Check them before saving.</p>}
-              {reviewing.needsReview && <p className="font-medium text-amber-900">This heading was unclear in the capture. Check the company, job title and dates before saving.</p>}
-              {(!reviewing.entry.start || reviewing.endRequired) && <p>Enter any missing dates before saving.</p>}
-            </div>}
-            <label className="block text-sm font-medium">Company <input ref={companyField} className="pilot-field mt-1" value={entry.company} required maxLength={120} onChange={(e) => setEntry({ ...entry, company: e.target.value })} /></label>
-            <label className="block text-sm font-medium">Job title <input className="pilot-field mt-1" value={entry.title} required maxLength={120} onChange={(e) => setEntry({ ...entry, title: e.target.value })} /></label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block text-sm font-medium">Start date <input className="pilot-field mt-1" type="date" value={entry.start} max={today} required onChange={(e) => setEntry({ ...entry, start: e.target.value })} /></label>
-              <label className="block text-sm font-medium">End date <input className="pilot-field mt-1" type="date" value={entry.end} min={entry.start} max={today} required={reviewing?.endRequired} onChange={(e) => setEntry({ ...entry, end: e.target.value })} /></label>
-            </div>
-            <p className="text-sm text-slate-600">Leave the end date blank if you still work there.</p>
-            <div className="flex gap-3">
-              <button className="pilot-button">Save entry</button>
-              {(editing || reviewing) && <button type="button" className="pilot-button-secondary" onClick={resetEntry}>Cancel</button>}
-            </div>
-          </fieldset>
-        </form>
-        <div className="min-w-0 space-y-4">
-          <section className="pilot-card">
-            <h2 className="text-lg font-semibold">Import LinkedIn experience</h2>
-            <div className="mt-4">
-              <label className="block text-sm font-medium" htmlFor="linkedin-import-url">LinkedIn profile URL</label>
-              <input id="linkedin-import-url" className="pilot-field mt-1" value={profileUrl ?? work.data?.linkedinProfileUrl ?? ""}
-                required maxLength={512} inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false}
-                placeholder="https://www.linkedin.com/in/your-name/" aria-describedby="linkedin-import-help"
-                disabled={pending || reading} onChange={event => setProfileUrl(event.target.value)} />
-              <p id="linkedin-import-help" className="mt-2 text-sm text-slate-600">Open your Experience page, then share that tab to prepare your work history for review.</p>
-              <LinkedInTabImport url={profileUrl ?? work.data?.linkedinProfileUrl ?? ""} disabled={pending || reading || !work.data}
-                onImported={acceptLinkedInProfile} />
-            </div>
-            {importedUrl && <div className="mt-4 rounded-lg bg-primary-50 p-3 text-sm" role="status">
-              <p className="font-semibold">LinkedIn roles ready to review</p>
-              <a className="pilot-link mt-1 inline-block break-all" href={importedUrl} target="_blank" rel="noreferrer">{importedUrl}</a>
-              <p className="mt-1 text-slate-600">This may be a partial history. Check your profile for missing roles. Matching saved entries are marked below.</p>
-            </div>}
-            <h3 className="mt-5 border-t border-border pt-4 text-sm font-semibold">Or import a saved file</h3>
-            <p className="mt-2 text-sm text-slate-600">On your LinkedIn profile, choose <strong>More</strong> or <strong>Resources</strong>, then <strong>Save to PDF</strong>. You can also use the Positions CSV from your data export.</p>
-            <p className="mt-2 text-sm text-slate-600">Your browser reads the file. Review each role before saving it.</p>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-              <a className="pilot-link" href="https://www.linkedin.com/help/linkedin/answer/a541960/" target="_blank" rel="noreferrer">Save your profile as a PDF</a>
-              <a className="pilot-link" href="https://www.linkedin.com/help/linkedin/answer/a1339364/" target="_blank" rel="noreferrer">Download your LinkedIn data</a>
-            </div>
-            <label className="mt-4 block text-sm font-medium">
-              <span id="linkedin-file-label">LinkedIn profile PDF or Positions CSV</span>
-              <span className="pilot-file mt-1">
-                <input className="peer absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed" type="file"
-                  accept=".pdf,application/pdf,.csv,text/csv" aria-labelledby="linkedin-file-label" aria-describedby="linkedin-file-status"
-                  disabled={pending || reading} onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-                    event.currentTarget.value = "";
-                    if (file) void readPositions(file);
-                  }} />
-                <span aria-hidden="true" className="shrink-0 rounded-md bg-primary-50 px-2.5 py-2 font-semibold text-primary peer-hover:bg-primary-100 peer-disabled:opacity-50">
-                  {importFileName ? "Replace file" : "Choose file"}
-                </span>
-                <span id="linkedin-file-status" className="min-w-0 truncate pr-2 font-normal text-slate-600" title={importFileName} role="status">
-                  {reading ? "Reading positions…" : importFileName || "No file selected"}
-                </span>
-              </span>
-            </label>
-            {importError && <p className="mt-2 text-sm text-red-800" role="alert">{importError}</p>}
-            {positions.length > 0 && <ul className="mt-3 divide-y divide-border" aria-label="Imported LinkedIn positions">
-              {positions.map(position => {
-                const matches = work.data?.history.filter(item => matchLinkedInPosition(position, item)) ?? [];
-                const active = reviewing?.id === position.id;
-                return <li key={position.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
-                  <div className="min-w-0 break-words text-sm">
-                    <p className="font-semibold">{position.entry.title || "Job title missing"}</p>
-                    <p>{position.entry.company || "Company missing"}</p>
-                    <p className="text-slate-600">{position.originalStart || "No start date"} to {position.originalEnd || "present"}</p>
-                    {position.needsReview && <p className="text-xs font-medium text-amber-900">Unclear capture — needs review</p>}
-                    {matches.length > 0 && <p className="mt-1 font-medium text-success-800">Already saved</p>}
-                  </div>
-                  {matches.length > 1
-                    ? <a className="pilot-link text-sm" href="#saved-work-entries">View saved entries</a>
-                    : <button type="button" className="pilot-button-secondary" disabled={pending || reading || !work.data || active}
-                        aria-label={`${matches.length ? "Edit saved" : "Review"} ${position.entry.title || "position"} at ${position.entry.company || "company missing"}`}
-                        onClick={() => matches.length ? editSaved(matches[0]) : review(position)}>
-                        {matches.length ? "Edit saved" : active ? "In form" : "Review"}
-                      </button>}
-                </li>;
-              })}
-            </ul>}
-          </section>
-          <section id="directory-visibility" className="pilot-card scroll-mt-5" aria-labelledby="directory-visibility-title">
-            <h2 id="directory-visibility-title" className="text-lg font-semibold">Directory</h2>
-            {work.data && <label className="mt-3 flex items-start gap-3">
-              <input type="checkbox" className="mt-1" checked={work.data.visible} disabled={pending} onChange={(e) => {
-                const visible = e.target.checked;
-                void change(() => send("/directory-visibility", "PUT", { visible }), "Directory setting saved.");
-              }} />
-              <span>Let invited participants find me by name and check whether they can rate me.</span>
-            </label>}
-            {work.data && <LinkedInProfileField savedUrl={work.data.linkedinProfileUrl} disabled={pending || reading} onSaved={work.refresh} />}
-          </section>
-          <section className="pilot-card" id="saved-work-entries">
-            <h2 className="text-lg font-semibold">Your entries</h2>
-            {!work.data && !work.error && <p className="mt-3" role="status">Loading work history…</p>}
-            {work.data?.history.length === 0 && <p className="mt-3 text-slate-600">You haven’t added any entries yet.</p>}
-            <ul className="divide-y divide-border">
-              {work.data?.history.map((item) => (
-                <li key={item.id} className="py-4">
-                  <p className="font-semibold">{item.company}</p>
-                  <p>{item.title}</p>
-                  <p className="text-sm text-slate-600">{item.start} to {item.end || "present"}</p>
-                  <div className="flex gap-2 mt-3">
-                    <button className="pilot-button-secondary" disabled={pending || reading} onClick={() => editSaved(item)}>Edit</button>
-                    <button className="pilot-button-secondary" disabled={pending} onClick={() => {
-                      if (!window.confirm("Remove this work history entry?")) return;
-                      void change(async () => {
-                        await send("/work-history/" + item.id, "DELETE");
-                        if (editing === item.id) { setEditing(undefined); setEntry(empty); }
-                      }, "Work history entry removed.");
-                    }}>Remove</button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </div>
+  function saveImported() {
+    if (!work.data || !selected.size || selected.size > maxImportRoles || pending) return;
+    const entries = positions.filter(role => selected.has(role.id)).map(role => {
+      const { source } = role;
+      const linkedinSource = source.company.length <= 240 && source.title.length <= 240 ? source : undefined;
+      return { ...role.entry, end: role.entry.end || null, linkedinSource };
+    });
+    void change(async () => {
+      const result = await send<{ saved: number; skipped: number }>("/work-history/import", "POST", { entries });
+      setPositions(current => current.filter(role => !selected.has(role.id)));
+      focusSection("saved-work-heading");
+      const added = `${result.saved} ${result.saved === 1 ? "role" : "roles"} added.`;
+      return result.skipped ? `${added} ${result.skipped} already saved.` : added;
+    });
+  }
+
+  function editPosition(id: number, key: keyof EntryFields, value: string) {
+    setPositions(current => current.map(role => role.id === id ? { ...role, entry: { ...role.entry, [key]: value } } : role));
+  }
+
+  return <main className="pilot-main">
+    <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-4">
+      <div>
+        <h1 className="pilot-title">My work history</h1>
+        <p className="mt-2 max-w-xl text-slate-600">Your private work history helps E-ProRate find colleagues you worked with.</p>
       </div>
-    </main>
-  );
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="pilot-button" disabled={pending || reading || !work.data} aria-expanded={importOpen} onClick={openImport}>
+          <FileUp size={17} aria-hidden="true" /> Import from LinkedIn
+        </button>
+        <button type="button" className="pilot-button-secondary" disabled={pending || reading || !work.data} aria-expanded={editorOpen} onClick={() => openEditor()}>
+          <Plus size={17} aria-hidden="true" /> Add role
+        </button>
+      </div>
+    </div>
+    {(error || work.error) && <p id="work-history-error" tabIndex={-1} className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{error || work.error}</p>}
+    {notice && <p className="mt-4 rounded-lg bg-green-50 p-3 text-sm font-medium text-success-800" role="status">{notice}</p>}
+    <div className="mt-6 space-y-4">
+      {importOpen && <ImportSource mode={mode} profileUrl={profileUrl ?? work.data?.linkedinProfileUrl ?? ""}
+        reading={reading} disabled={pending || !work.data} error={importError} onMode={next => { setMode(next); setImportError(""); }}
+        onClose={() => setImportOpen(false)} onUrl={setProfileUrl} onFile={file => void readPositions(file)} onProfile={acceptLinkedInProfile} />}
+      {positions.length > 0 && <ImportReview positions={positions} selected={selected} saved={saved} source={source} today={today}
+        pending={pending || reading || !work.data} onSelect={(id, checked) => setSelection(current => new Map(current).set(id, checked))}
+        onSelectReady={() => setSelection(new Map())} onClearSelection={() => setSelection(new Map(positions.map(role => [role.id, false])))}
+        onEdit={editPosition} onSave={saveImported} onClear={() => { setPositions([]); focusSection("saved-work-heading"); }} />}
+      {editorOpen && <form className="pilot-card scroll-mt-5" onSubmit={save}>
+        <h2 id="work-history-editor" className="text-xl font-semibold">{editing ? "Edit role" : "Add a role"}</h2>
+        <fieldset disabled={pending || reading} aria-labelledby="work-history-editor" className="mt-4 min-w-0 space-y-4">
+          <WorkFields entry={entry} today={today} companyRef={companyField} onChange={(key, value) => setEntry(current => ({ ...current, [key]: value }))} />
+          <p className="text-sm text-slate-600">Leave the end date blank if you still work there.</p>
+          <div className="flex gap-2">
+            <button className="pilot-button">{pending ? "Saving…" : "Save role"}</button>
+            <button type="button" className="pilot-button-secondary" onClick={() => { resetEntry(); focusSection("saved-work-heading"); }}>Cancel</button>
+          </div>
+        </fieldset>
+      </form>}
+      <section className="pilot-card scroll-mt-5" id="saved-work-entries" aria-labelledby="saved-work-heading">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="saved-work-heading" className="text-xl font-semibold" tabIndex={-1}>Saved roles</h2>
+          {work.data && saved.length > 0 && <span className="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary">{saved.length} {saved.length === 1 ? "role" : "roles"}</span>}
+        </div>
+        {!work.data && !work.error && <p className="mt-3 text-sm text-slate-600" role="status">Loading work history…</p>}
+        {work.data && !saved.length && <div className="mt-4 rounded-xl border border-dashed border-border bg-slate-50 p-5 sm:p-6">
+          <p className="font-semibold text-primary">No roles saved yet</p>
+          <p className="mt-1 text-sm text-slate-600">Import your LinkedIn experience or add a role by hand to get started.</p>
+        </div>}
+        <ul className="mt-2 divide-y divide-border">
+          {saved.map(item => <li key={item.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 py-4 last:pb-0">
+            <div className="min-w-0 break-words">
+              <div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-primary">{item.title}</p>
+                {!item.end && <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-success-800">Current</span>}</div>
+              <p className="mt-0.5 text-sm">{item.company}</p>
+              <p className="mt-0.5 text-xs text-slate-600">{workDates(item.start, item.end)}</p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button type="button" className="pilot-button-secondary" aria-label={`Edit ${item.title} at ${item.company}`} disabled={pending || reading} onClick={() => openEditor(item)}><Pencil size={14} aria-hidden="true" /> Edit</button>
+              <button type="button" className="pilot-button-secondary" aria-label={`Remove ${item.title} at ${item.company}`} disabled={pending || reading} onClick={() => {
+                if (!window.confirm("Remove this work history role?")) return;
+                void change(async () => {
+                  await send("/work-history/" + item.id, "DELETE");
+                  if (editing === item.id) resetEntry();
+                  return "Role removed.";
+                });
+              }}><Trash2 size={14} aria-hidden="true" /> Remove</button>
+            </div>
+          </li>)}
+        </ul>
+      </section>
+      <details id="directory-visibility" className="pilot-card group scroll-mt-5" open={hash === "#directory-visibility" || undefined}>
+        <summary className="flex cursor-pointer list-none items-start justify-between gap-3 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+          <span><span className="block text-base font-semibold">Directory settings</span>{work.data && <span className="mt-1 block text-sm text-slate-600">{work.data.visible ? "Your profile is visible to other members." : "Your profile is hidden from the directory."}</span>}</span>
+          <ChevronDown size={20} className="shrink-0 text-primary group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        {work.data && <>
+        <label className="mt-4 flex items-start gap-3 text-sm">
+          <input type="checkbox" className="mt-0.5 rounded border-border-dark text-primary focus:ring-primary" checked={work.data.visible} disabled={pending} onChange={event => {
+            const visible = event.target.checked;
+            void change(async () => { await send("/directory-visibility", "PUT", { visible }); return "Directory setting saved."; });
+          }} />
+          <span>Let members find me by name and check whether they can rate me.</span>
+        </label>
+        <LinkedInProfileField savedUrl={work.data.linkedinProfileUrl} disabled={pending || reading} onSaved={work.refresh} />
+        </>}
+      </details>
+    </div>
+  </main>;
 }

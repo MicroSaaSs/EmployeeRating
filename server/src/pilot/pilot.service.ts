@@ -3,11 +3,12 @@ import type { Pool, PoolClient } from "pg";
 import { Database } from "../database/database";
 import { overlapStart, overlapEnd } from "./eligibility";
 import { cleanCompany } from "./companies";
-import { linkedInSourceInput, ratingInput, workInput } from "./inputs";
+import { linkedInSourceInput, ratingInput, workImportInput, workInput } from "./inputs";
 
 const workQuery = `SELECT w.id, c.name AS company, w.title, w.start_date::text AS start, w.end_date::text AS end,
     w.linkedin_source AS "linkedinSource"
   FROM work_history w JOIN companies c ON c.id = w.company_id WHERE w.user_id = $1 ORDER BY w.start_date DESC, w.id`;
+const workTitleKey = (title: string) => cleanCompany(title).toLowerCase().replace(/^1с(?=$|[\s:/()-])/u, "1c");
 const ratingFields = `r.id, r.overall, r.categories, r.feedback, r.anonymous, r.hidden, r.updated_at AS "updatedAt"`;
 
 @Injectable()
@@ -55,50 +56,84 @@ export class PilotService {
     if (!result.rowCount) throw new UnauthorizedException("Sign in to continue.");
   }
 
+  private async workCompany(client: PoolClient, name: string) {
+    const { rows: [company] } = await client.query<{ id: string }>(
+      `WITH known AS (SELECT company_id AS id FROM company_aliases WHERE name_key = $2),
+       registered AS (
+         INSERT INTO companies (name, name_key) SELECT $1, $2 WHERE NOT EXISTS (SELECT 1 FROM known)
+         ON CONFLICT (name_key) DO UPDATE SET name_key = EXCLUDED.name_key RETURNING id
+       )
+       SELECT id FROM known UNION ALL SELECT id FROM registered`, [name, name.toLowerCase()],
+    );
+    return company.id;
+  }
+
+  private async insertWork(client: PoolClient, userId: string, entry: ReturnType<typeof workInput>,
+    source: ReturnType<typeof linkedInSourceInput>, checkDuplicate: boolean) {
+    const sourceKey = source?.company && source.title && source.start && source.end !== "" ? JSON.stringify(source) : null;
+    if (sourceKey) {
+      const existingSource = await client.query("SELECT 1 FROM work_history WHERE user_id=$1 AND linkedin_source=$2::jsonb", [userId, sourceKey]);
+      if (existingSource.rowCount) return false;
+    }
+    const companyId = await this.workCompany(client, entry.company);
+    if (checkDuplicate) {
+      const { rows } = await client.query<{ title: string; start: string; end: string | null }>(
+        `SELECT title, start_date::text AS start, end_date::text AS end
+         FROM work_history WHERE user_id = $1 AND company_id = $2`, [userId, companyId],
+      );
+      const title = workTitleKey(entry.title);
+      const sourceTitle = source ? workTitleKey(source.title) : "";
+      const duplicate = rows.some(row => {
+        const savedTitle = workTitleKey(row.title);
+        if (savedTitle === title && row.start === entry.start && row.end === entry.end) return true;
+        return source && savedTitle === sourceTitle && !!source.start && row.start.startsWith(source.start) &&
+          (source.end === null ? row.end === null : !!source.end && row.end?.startsWith(source.end));
+      });
+      if (duplicate) return false;
+    }
+    await client.query(
+      "INSERT INTO work_history (user_id, company_id, title, start_date, end_date, linkedin_source) VALUES ($1, $2, $3, $4, $5, $6)",
+      [userId, companyId, entry.title, entry.start, entry.end, sourceKey],
+    );
+    return true;
+  }
+
   async saveWork(userId: string, entryId: string | null, entry: ReturnType<typeof workInput>, source?: ReturnType<typeof linkedInSourceInput>) {
     await this.db.limit("work:" + userId, 60);
     await this.db.transaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock_shared(114010, 2)");
       await this.lockActiveAccount(client, userId);
-      const company = await client.query<{ id: string }>(
-        `WITH known AS (SELECT company_id AS id FROM company_aliases WHERE name_key = $2),
-         registered AS (
-           INSERT INTO companies (name, name_key) SELECT $1, $2 WHERE NOT EXISTS (SELECT 1 FROM known)
-           ON CONFLICT (name_key) DO UPDATE SET name_key = EXCLUDED.name_key RETURNING id
-         )
-         SELECT id FROM known UNION ALL SELECT id FROM registered`,
-        [entry.company, entry.company.toLowerCase()],
-      );
-      const data = [userId, company.rows[0].id, entry.title, entry.start, entry.end];
-      if (entryId) {
-        const updated = await client.query(
-          `UPDATE work_history SET company_id = $2, title = $3, start_date = $4, end_date = $5
-           WHERE user_id = $1 AND id = $6`, [...data, entryId],
-        );
-        if (!updated.rowCount) throw new NotFoundException("Work history entry not found.");
-      } else {
-        const sourceKey = source?.company && source.title && source.start && source.end !== "" ? JSON.stringify(source) : null;
-        if (source) {
-          const existing = await client.query<{ same_source: boolean; title: string; start: string; end: string | null }>(
-            `SELECT coalesce(linkedin_source = $3::jsonb, false) AS same_source, title, start_date::text AS start, end_date::text AS end
-             FROM work_history WHERE user_id = $1 AND (company_id = $2 OR linkedin_source = $3::jsonb)`,
-            [userId, company.rows[0].id, sourceKey],
-          );
-          const title = cleanCompany(entry.title).toLowerCase();
-          const duplicate = existing.rows.some(row => {
-            if (row.same_source) return true;
-            const savedTitle = cleanCompany(row.title).toLowerCase();
-            return (savedTitle === title && row.start === entry.start && row.end === entry.end) ||
-              (savedTitle === source.title && !!source.start && row.start.startsWith(source.start) &&
-                (source.end === null ? row.end === null : !!source.end && row.end?.startsWith(source.end)));
-          });
-          if (duplicate) throw new ConflictException("This LinkedIn position is already in your work history.");
+      if (!entryId) {
+        if (!await this.insertWork(client, userId, entry, source, Boolean(source))) {
+          throw new ConflictException("This LinkedIn position is already in your work history.");
         }
-        await client.query(
-          "INSERT INTO work_history (user_id, company_id, title, start_date, end_date, linkedin_source) VALUES ($1, $2, $3, $4, $5, $6)",
-          [...data, sourceKey],
-        );
+        return;
       }
+      const companyId = await this.workCompany(client, entry.company);
+      const updated = await client.query(
+        `UPDATE work_history SET company_id = $2, title = $3, start_date = $4, end_date = $5
+         WHERE user_id = $1 AND id = $6`, [userId, companyId, entry.title, entry.start, entry.end, entryId],
+      );
+      if (!updated.rowCount) throw new NotFoundException("Work history entry not found.");
+    });
+  }
+
+  async importWork(userId: string, entries: ReturnType<typeof workImportInput>) {
+    await this.db.limit("work-import:" + userId, 12);
+    // Acquire company write locks in a consistent order across concurrent imports.
+    const ordered = [...entries].sort((a, b) => {
+      const first = a.entry.company.toLowerCase();
+      const second = b.entry.company.toLowerCase();
+      return first < second ? -1 : first > second ? 1 : 0;
+    });
+    return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock_shared(114010, 2)");
+      await this.lockActiveAccount(client, userId);
+      let saved = 0;
+      for (const { entry, source } of ordered) {
+        if (await this.insertWork(client, userId, entry, source, true)) saved += 1;
+      }
+      return { saved, skipped: entries.length - saved };
     });
   }
 
