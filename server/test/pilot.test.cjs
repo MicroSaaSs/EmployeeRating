@@ -314,11 +314,34 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
       anonymous: true,
       authorId: other.id,
     };
+    const bobRating = "/ratings/for/" + bob.id;
+    assert.equal((await api("/rating-categories")).status, 401);
+    assert.deepEqual((await api("/rating-categories?q=tech", alice)).json, ["Technical"]);
+    const overallOnly = await api(bobRating, { ...alice, method: "PUT", body: { overall: 4 } });
+    assert.equal(overallOnly.status, 200, JSON.stringify(overallOnly.json));
+    const simpleRating = (await api(bobRating, alice)).json.rating;
+    assert.equal(simpleRating.overall, 4);
+    assert.equal(simpleRating.anonymous, true);
+    assert.equal(simpleRating.feedback, "");
+    assert.deepEqual(simpleRating.categories, {});
+    const editRating = categories => api(bobRating, { ...alice, method: "PUT", body: {
+      overall: 4, categories, feedback: "Helpful",
+    } });
+    assert.equal((await editRating({ Mentoring: 5, mentoring: 4 })).status, 400);
+    assert.equal((await editRating({ Mentoring: 0 })).status, 400);
+    assert.equal((await editRating({ "  Peer   Mentoring  ": 5 })).status, 200);
+    assert.equal((await editRating({ "peer mentoring": 4 })).status, 200);
+    assert.deepEqual((await api(bobRating, alice)).json.rating.categories, { "Peer Mentoring": 4 });
+    assert.deepEqual((await api("/rating-categories?q=mentoring", alice)).json, ["Peer Mentoring"]);
+    assert.deepEqual((await api("/rating-categories?q=mentoring", bob)).json, []);
     assert.equal((await api("/ratings/for/" + other.id, { ...alice, method: "PUT", body })).status, 403);
     assert.equal((await api("/ratings/for/" + alice.id, { ...alice, method: "PUT", body })).status, 403);
     const successful = await Promise.all([1, 2].map(() => api("/ratings/for/" + bob.id, { ...alice, method: "PUT", body })));
     for (const result of successful) assert.equal(result.status, 200, JSON.stringify(result.json));
     assert.equal(successful[0].json.id, successful[1].json.id);
+    assert.equal(successful[0].json.id, overallOnly.json.id);
+    assert.deepEqual((await api(bobRating, alice)).json.rating.categories, body.categories);
+    assert.deepEqual((await api("/rating-categories?q=mentoring", alice)).json, ["Peer Mentoring"]);
 
     const given = (await api("/ratings/mine", alice)).json.given;
     assert.equal(given.length, 1);
@@ -572,6 +595,10 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     // Shared colleague profiles are independent of the earlier private drafts.
     assert.equal((await api("/moderation/submissions", { ...operator, method: "PUT", body: { paused: false } })).status, 204);
     const savedPrivate = (await api(draftPath, { ...alice, method: "POST", body: draftBody })).json.id;
+    assert.deepEqual((await api("/professionals/" + savedPrivate, alice)).json, {
+      id: savedPrivate, name: draftBody.name, eligible: true, legacyDraft: true,
+    });
+    assert.equal((await api("/professionals/" + savedPrivate, other)).status, 404);
     assert.deepEqual((await api("/professionals/search?q=Draft%20Colleague", alice)).json.professionals, [
       { id: savedPrivate, name: draftBody.name, eligible: true, privateDraft: true },
     ]);

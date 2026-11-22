@@ -26,6 +26,10 @@ export function send<T = void>(path: string, method: string, body?: object) {
   return request<T>(path, { method, body: body && JSON.stringify(body) });
 }
 
+export function preparePrivateDraftRating(id: string, signal?: AbortSignal) {
+  return request<{ id: string }>("/colleague-drafts/" + id + "/rating-target", { method: "POST", signal });
+}
+
 export const message = (error: unknown) => error instanceof Error ? error.message : "Something went wrong.";
 
 export function useResource<T>(path: string) {
@@ -49,6 +53,7 @@ export interface Colleague {
   eligible: boolean;
   draft?: true;
   privateDraft?: true;
+  legacyDraft?: true;
   claimedByViewer?: true;
 }
 
@@ -75,13 +80,20 @@ export interface SharedColleagueDraft {
   invitedBy: string | null;
 }
 
-export const categories = ["technical", "communication", "leadership", "reliability", "teamwork"] as const;
+const legacyRatingCategoryLabels = new Map([
+  ["technical", "Technical"],
+  ["communication", "Communication"],
+  ["leadership", "Leadership"],
+  ["reliability", "Reliability"],
+  ["teamwork", "Teamwork"],
+]);
+export const ratingCategoryLabel = (name: string) => legacyRatingCategoryLabels.get(name) ?? name;
 
 export interface Rating {
   id: string;
   name: string;
   overall: number;
-  categories: Partial<Record<(typeof categories)[number], number>>;
+  categories: Record<string, number>;
   feedback: string;
   anonymous: boolean;
   hidden: boolean;

@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import { Database } from "../database/database";
 import { draftWorkEntries, overlapsDraftWork, overlapsPrivateDraft, ownsPrivateDraft, redeemedDraftInvite, overlapStart, overlapEnd } from "./eligibility";
 import { cleanCompany } from "./companies";
-import { linkedInSourceInput, ratingInput, workImportInput, workInput } from "./inputs";
+import { defaultRatingCategories, defaultRatingCategoryKeys, linkedInSourceInput, ratingInput, workImportInput, workInput } from "./inputs";
 
 export const workQuery = `SELECT w.id, c.name AS company, w.title, w.start_date::text AS start, w.end_date::text AS end,
     w.linkedin_source AS "linkedinSource"
@@ -244,7 +244,14 @@ export class PilotService {
       [recipientId, userId],
     );
     const recipient = result.rows[0];
-    if (!recipient) throw new NotFoundException("Colleague not found.");
+    if (!recipient) {
+      const { rows: [legacy] } = await this.db.pool.query(
+        `SELECT d.id, d.name, ${overlapsDraftWork("$2", "d.history")} AS eligible
+         FROM colleague_drafts d WHERE d.id=$1 AND d.owner_id=$2`, [recipientId, userId],
+      );
+      if (!legacy) throw new NotFoundException("Colleague not found.");
+      return { ...legacy, legacyDraft: true };
+    }
     const { draft, privateDraft, claimedByViewer, ...person } = recipient;
     return { ...person, ...(draft ? { draft } : {}), ...(privateDraft ? { privateDraft } : {}), ...(claimedByViewer ? { claimedByViewer } : {}) };
   }
@@ -285,6 +292,34 @@ export class PilotService {
     return rows[0] || null;
   }
 
+  async ratingCategories(owner: string, query: string) {
+    const { rows } = await this.db.pool.query<{ name: string }>(
+      `WITH options AS (
+         SELECT name, lower(name) AS name_key FROM unnest($2::text[]) AS name
+         UNION ALL
+         SELECT name, name_key FROM rating_categories WHERE owner_id=$1
+       )
+       SELECT name FROM options WHERE strpos(name_key,$3)>0
+       ORDER BY (name_key=$3) DESC,(strpos(name_key,$3)=1) DESC,name_key LIMIT 25`,
+      [owner, defaultRatingCategories, query],
+    );
+    return rows.map(({ name }) => name);
+  }
+
+  private async saveRatingCategories(client: PoolClient, owner: string, categories: Record<string, number>) {
+    const custom = Object.keys(categories).filter(name => !defaultRatingCategoryKeys.has(name));
+    if (!custom.length) return categories;
+    const { rows } = await client.query<{ name_key: string; name: string }>(
+      `INSERT INTO rating_categories (owner_id,name_key,name)
+       SELECT $1, name_key, name FROM unnest($2::text[],$3::text[]) AS item(name_key,name)
+       ON CONFLICT (owner_id,name_key) DO UPDATE SET name=rating_categories.name
+       RETURNING name_key,name`,
+      [owner, custom.map(name => name.toLowerCase()), custom],
+    );
+    const savedNames = new Map(rows.map(row => [row.name_key, row.name]));
+    return Object.fromEntries(Object.entries(categories).map(([name, value]) => [savedNames.get(name.toLowerCase()) ?? name, value]));
+  }
+
   async saveRating(author: string, recipient: string, rating: ReturnType<typeof ratingInput>) {
     if (author === recipient) throw new ForbiddenException("You can only rate another member.");
     await this.db.limit("rating:" + author, 30);
@@ -323,6 +358,7 @@ export class PilotService {
         const review = await client.query("SELECT 1 FROM reports WHERE rating_id = $1 AND status = 'open'", [before.rows[0].id]);
         if (before.rows[0].hidden || review.rowCount) throw new ConflictException("This rating is being moderated.");
       }
+      const categories = await this.saveRatingCategories(client, author, rating.categories);
       const result = await client.query<{ id: string }>(
         `INSERT INTO ratings (author_id, recipient_id, overall, categories, feedback, anonymous, eligibility)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -330,7 +366,7 @@ export class PilotService {
          SET overall = EXCLUDED.overall, categories = EXCLUDED.categories, feedback = EXCLUDED.feedback,
              anonymous = EXCLUDED.anonymous, eligibility = EXCLUDED.eligibility, updated_at = now()
          RETURNING id`,
-        [author, recipient, rating.overall, rating.categories, rating.feedback, rating.anonymous,
+        [author, recipient, rating.overall, categories, rating.feedback, rating.anonymous,
           { ...evidence, version: 1, ...(target.draft ? officialOverlap ? { fromSharedDraft: true } : { fromPrivateDraft: true } : {}) }],
       );
       return result.rows[0];

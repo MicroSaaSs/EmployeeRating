@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { message, send, useResource, type Colleague, type SharedColleagueDraft } from "../../utils/api";
 import SharedWorkDatesTag from "../../components/SharedWorkDatesTag";
 import ColleagueInvitationLink from "../../components/ColleagueInvitationLink";
@@ -103,6 +103,7 @@ export default function ProfessionalProfile() {
   const result = useResource<Colleague>("/professionals/" + id);
   const person = result.data;
   const fromInvitation = params.get("claim") === "1";
+  if (person?.legacyDraft) return <Navigate to={"/colleague-drafts#draft-" + id} replace />;
 
   return (
     <main className="pilot-main">

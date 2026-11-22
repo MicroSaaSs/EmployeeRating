@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { AuthService } from "../auth/auth.service";
-import { boolean, colleagueDraftInput, linkedInSourceInput, object, pageNumber, ratingInput, searchTerm, text, workImportInput, workInput } from "./inputs";
+import { boolean, colleagueDraftInput, linkedInSourceInput, object, pageNumber, ratingCategorySearch, ratingInput, searchTerm, text, workImportInput, workInput } from "./inputs";
 import { PilotOperationsService } from "./operations.service";
 import { PilotService } from "./pilot.service";
 import { colleagueSearch, linkedInProfileUrl } from "./linkedin-profile";
@@ -196,6 +196,12 @@ export class PilotController {
   @Get("ratings/mine")
   async mine(@Req() req: Request) {
     return this.pilot.ratings((await this.auth.requireUser(req)).id);
+  }
+
+  @Get("rating-categories")
+  async ratingCategories(@Req() req: Request, @Query("q") query: unknown) {
+    const user = await this.auth.requireUser(req);
+    return this.pilot.ratingCategories(user.id, ratingCategorySearch(query));
   }
 
   @Get("ratings/reports/mine")

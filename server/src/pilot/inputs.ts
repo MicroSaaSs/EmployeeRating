@@ -81,7 +81,14 @@ export function workImportInput(body: unknown) {
   });
 }
 
-export const categoryNames = ["technical", "communication", "leadership", "reliability", "teamwork"] as const;
+export const defaultRatingCategories = ["Technical", "Communication", "Leadership", "Reliability", "Teamwork"] as const;
+export const defaultRatingCategoryKeys = new Set<string>(defaultRatingCategories.map(name => name.toLowerCase()));
+
+export function ratingCategorySearch(value: unknown) {
+  if (value === undefined) return "";
+  if (typeof value !== "string") throw new BadRequestException("Use a category name to search.");
+  return cleanCompany(text(value, "Category search", 0, 60)).toLowerCase();
+}
 
 function score(value: unknown) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 5) {
@@ -92,17 +99,27 @@ function score(value: unknown) {
 
 export function ratingInput(body: unknown) {
   const input = object(body);
-  const raw = object(input.categories);
-  const categories = Object.fromEntries(categoryNames.filter((key) => Object.hasOwn(raw, key))
-    .map((key) => [key, score(raw[key])]));
-  if (Object.keys(categories).length < 3 || Object.keys(categories).length !== Object.keys(raw).length) {
-    throw new BadRequestException("Score at least three of the five categories.");
+  const entries = input.categories === undefined ? [] : Object.entries(object(input.categories));
+  if (entries.length > 20) throw new BadRequestException("Choose up to 20 rating categories.");
+  const categoryKeys = new Set<string>();
+  const categories = Object.fromEntries(entries.map(([label, value]) => {
+    const name = cleanCompany(text(label, "Category name", 1, 60));
+    if (!/[\p{L}\p{N}]/u.test(name) || /[\p{Cc}]/u.test(name)) {
+      throw new BadRequestException("Enter a category name that contains a letter or number.");
+    }
+    const key = name.toLowerCase();
+    if (categoryKeys.has(key)) throw new BadRequestException("Choose each rating category once.");
+    categoryKeys.add(key);
+    return [defaultRatingCategoryKeys.has(key) ? key : name, score(value)];
+  }));
+  if (input.feedback !== undefined && typeof input.feedback !== "string") {
+    throw new BadRequestException("Write feedback as text.");
   }
   return {
     overall: score(input.overall),
     categories,
-    feedback: text(input.feedback, "Feedback", 20, 2000),
-    anonymous: boolean(input.anonymous),
+    feedback: text(input.feedback, "Feedback", 0, 2000),
+    anonymous: input.anonymous === undefined ? true : boolean(input.anonymous),
   };
 }
 

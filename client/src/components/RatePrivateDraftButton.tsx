@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { message, send } from "../utils/api";
+import { message, preparePrivateDraftRating } from "../utils/api";
 
 export default function RatePrivateDraftButton({ id, name, directorySearch }: {
   id: string;
@@ -15,7 +15,7 @@ export default function RatePrivateDraftButton({ id, name, directorySearch }: {
     setPending(true);
     setError("");
     try {
-      const recipient = await send<{ id: string }>("/colleague-drafts/" + id + "/rating-target", "POST");
+      const recipient = await preparePrivateDraftRating(id);
       navigate("/professionals/" + recipient.id + "/rate", { state: { directorySearch } });
     } catch (failure) {
       setError(message(failure));

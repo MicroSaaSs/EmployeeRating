@@ -1,16 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
-import { categories, message, send, useResource, type Colleague, type Rating } from "../../utils/api";
-
-function Score({ label, value, required, setValue }: { label: string; value: number; required?: boolean; setValue: (value: number) => void }) {
-  return <label className="block capitalize">
-    {label}
-    <select className="pilot-field mt-1" value={value || ""} required={required} onChange={(e) => setValue(Number(e.target.value))}>
-      <option value="">Choose a score</option>
-      {[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score} / 5</option>)}
-    </select>
-  </label>;
-}
+import { X } from "lucide-react";
+import { message, preparePrivateDraftRating, ratingCategoryLabel, send, useResource, type Colleague, type Rating } from "../../utils/api";
+import { RatingStarInput } from "../../components/RatingStars";
+import CategoryPicker from "./CategoryPicker";
 
 function RatingForm({ id, rating }: { id: string; rating: Rating | null }) {
   const [overall, setOverall] = useState(rating?.overall ?? 0);
@@ -37,18 +30,30 @@ function RatingForm({ id, rating }: { id: string; rating: Rating | null }) {
 
   return <form onSubmit={save} className="pilot-card mt-6">
     <fieldset className="space-y-5" disabled={pending || rating?.hidden}>
-      <Score label="Overall" value={overall} required setValue={setOverall} />
-      <fieldset>
-        <legend className="font-semibold">Category scores</legend>
-        <p className="mt-1 text-sm text-slate-600">Score at least three categories.</p>
-        <div className="grid gap-3 mt-3 sm:grid-cols-2">
-          {categories.map((category) => <Score key={category} label={category} value={scores[category] ?? 0}
-            setValue={(score) => setScores({ ...scores, [category]: score })} />)}
-        </div>
-      </fieldset>
-      <label className="block" >Written feedback
-        <textarea className="pilot-field mt-1" required minLength={20} maxLength={2000} rows={5} value={feedback} onChange={(e) => setFeedback(e.target.value)} />
-        <span className="text-sm text-slate-600">20 to 2,000 characters. Use examples from your work together.</span>
+      <RatingStarInput label="Overall rating" value={overall} required onChange={setOverall} />
+      <section className="space-y-3 border-t border-border pt-4" aria-labelledby="rating-category-heading">
+        <h2 className="font-semibold" id="rating-category-heading">Categories <span className="ml-1 text-sm font-normal text-slate-600">Optional</span></h2>
+        {Object.keys(scores).length < 20
+          ? <CategoryPicker selected={Object.keys(scores)} onSelect={name => setScores(current => ({ ...current, [name]: 0 }))} />
+          : <p className="text-sm text-slate-600">You’ve added 20 categories.</p>}
+        {Object.keys(scores).length > 0 && <ul className="divide-y divide-border rounded-lg border border-border">
+          {Object.entries(scores).map(([name, score]) => <li key={name} className="flex items-center gap-2 px-3 py-1">
+            <RatingStarInput label={ratingCategoryLabel(name)} value={score} compact
+              onChange={value => setScores(current => ({ ...current, [name]: value }))} />
+            <button type="button" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-600 hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+              aria-label={"Remove " + ratingCategoryLabel(name)} onClick={() => setScores(current => {
+                const next = { ...current };
+                delete next[name];
+                return next;
+              })}>
+              <X size={16} aria-hidden="true" />
+            </button>
+          </li>)}
+        </ul>}
+      </section>
+      <label className="block font-semibold">Written feedback <span className="ml-1 text-sm font-normal text-slate-600">Optional</span>
+        <textarea className="pilot-field mt-1 font-normal" maxLength={2000} rows={4} value={feedback} onChange={(e) => setFeedback(e.target.value)}
+          placeholder="Share an example from your work together" />
       </label>
       <fieldset className="space-y-2">
         <legend className="font-semibold">How should your name appear?</legend>
@@ -69,12 +74,34 @@ function RatingForm({ id, rating }: { id: string; rating: Rating | null }) {
   </form>;
 }
 
+function LegacyDraftRating({ id }: { id: string }) {
+  const navigate = useNavigate();
+  const { state } = useLocation();
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    preparePrivateDraftRating(id, controller.signal).then(recipient => {
+      if (!controller.signal.aborted) navigate("/professionals/" + recipient.id + "/rate", { replace: true, state });
+    }).catch(failure => {
+      if (!controller.signal.aborted) setError(message(failure));
+    });
+    return () => controller.abort();
+  }, [id, navigate, state]);
+
+  return <main className="pilot-main max-w-3xl">
+    <Link className="pilot-link" to={"/colleague-drafts#draft-" + id}>Back to saved draft</Link>
+    <p className="mt-5" role={error ? "alert" : "status"}>{error || "Opening rating form…"}</p>
+  </main>;
+}
+
 export default function RateProfessional() {
   const { id = "" } = useParams();
   const { state } = useLocation();
   const person = useResource<Colleague>("/professionals/" + id);
   const previous = useResource<{ rating: Rating | null }>("/ratings/for/" + id);
   const error = person.error || previous.error;
+  if (person.data?.legacyDraft && person.data.eligible) return <LegacyDraftRating key={id} id={id} />;
   if (person.data && person.data.id !== id) {
     const target = person.data.eligible ? "/professionals/" + person.data.id + "/rate" : "/professionals/" + id;
     return <Navigate to={target} state={state} replace />;

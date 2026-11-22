@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
-import { message, send, useResource, type Rating } from "../../utils/api";
+import { message, ratingCategoryLabel, send, useResource, type Rating } from "../../utils/api";
+import { RatingStars } from "../../components/RatingStars";
 
 const ratingTabs = [
   { id: "given", label: "Given" },
@@ -116,14 +117,14 @@ export default function MyRatingsDashboard() {
           {items?.map((rating) => <li key={rating.id} className="pilot-card">
             <div className="flex flex-wrap justify-between gap-2">
               <h2 className="font-semibold">{given ? "To" : "From"} {rating.name}</h2>
-              <span className="font-semibold text-primary">{rating.overall} / 5</span>
+              <RatingStars value={rating.overall} />
             </div>
-            <p className="mt-3 whitespace-pre-wrap break-words">{rating.feedback}</p>
-            <dl className="flex flex-wrap gap-x-5 gap-y-2 mt-3 text-sm text-slate-600">
-              {Object.entries(rating.categories).map(([name, score]) => <div key={name} className="flex gap-1">
-                <dt className="capitalize">{name}</dt><dd>{score} / 5</dd>
+            {rating.feedback && <p className="mt-3 whitespace-pre-wrap break-words">{rating.feedback}</p>}
+            {!!Object.keys(rating.categories).length && <dl className="flex flex-wrap gap-x-5 gap-y-2 mt-3 text-sm text-slate-600">
+              {Object.entries(rating.categories).map(([name, score]) => <div key={name} className="flex flex-wrap items-center gap-x-2">
+                <dt className="break-all">{ratingCategoryLabel(name)}</dt><dd><RatingStars value={score} /></dd>
               </div>)}
-            </dl>
+            </dl>}
             {given && <>
               <p className="mt-3 text-sm text-slate-600">{rating.hidden ? "Hidden by moderation" : rating.anonymous ? "Name hidden from recipient" : "Name visible to recipient"}</p>
               {rating.canOpenProfile && !rating.hidden && <Link className="pilot-link mt-2 inline-block" to={"/professionals/" + rating.personId + "/rate"}>Edit rating</Link>}
