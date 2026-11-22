@@ -96,7 +96,7 @@ The workspace contains both lockfiles, the CI workflow, versioned PostgreSQL mig
 
 The operator's **Administration** screen supports creating and revoking participant invitations and reviewing aggregate pilot activity. The report includes invitation redemptions, sign-ins, participation and eligibility, ratings opened, and the time to first moderation decision.
 
-Work history imports LinkedIn profile PDFs and Positions CSV files locally. Participants can review estimated dates and see which positions are already saved. **Administration → Companies** lets operators search company names and aliases, preview the affected work history entries, and link spelling variants that refer to the same employer.
+Work history imports LinkedIn profile PDFs, Positions CSV files, and shared LinkedIn tabs locally. Members can edit the imported roles, see estimated dates and saved matches, and save selected roles together. **Administration → Companies** lets operators search company names and aliases, preview the affected work history entries, and link spelling variants that refer to the same employer.
 
 The participant dashboard points to work history or eligible colleagues as their account progresses. It shows directory visibility and the count of unopened ratings.
 
@@ -105,6 +105,13 @@ Colleague search accepts LinkedIn profile links added by participants in the wor
 For colleagues outside the pilot, participants can import a saved LinkedIn PDF into a private draft and request an invitation. Operators review requests under **Administration → Requests** and prepare a single-use participant link. A draft's work history is private to its owner. The colleague completes the existing sign-in and onboarding flow after receiving an invitation.
 
 Shared-date checks use the participant's saved work history and company aliases. A local browser-extension prototype exists, but it is deferred: the product must work without users installing extensions.
+
+### Work history redesign and bulk import — 21 November 2026
+
+- [x] Show saved roles first, open manual entry on demand, and place directory controls in a separate settings section.
+- [x] Offer file upload and LinkedIn tab sharing as separate import choices. Both lead to one review list with inline editing and selection. Complete new roles are selected by default, and rows with missing or uncertain details are flagged.
+- [x] Save up to 100 selected roles in one request. Validate the entire selection before writing, skip duplicates, and keep retries and concurrent saves from adding duplicate rows.
+- [x] Verify the review and save flow with a sample CSV in the browser. PostgreSQL integration tests covered invalid batches, duplicate detection, and concurrent requests. CI passed on both deployment branches, and the redesigned page was verified in production. [Work history release](https://github.com/MicroSaaSs/EmployeeRating/commit/667c860982a4979128f7ff65d3fa1a44e1a08f2f)
 
 ### Private draft corrections — 20 November 2026
 
@@ -119,7 +126,7 @@ A participant-approved live capture produced five positions across four employer
 
 **Accepted direction:** Use the participant's normal LinkedIn tab and existing login without installing an extension. The user approved tab sharing after the server fetch and hosted browser experiments failed.
 
-**Current flow:** Profile link → normal Experience tab → native browser tab-sharing permission → preview and optional tab zoom → text-area selection → single-view or continuous local reading → stop → draft roles → existing work-history review and duplicate detection → explicit save.
+**Current flow:** Profile link → normal Experience tab → native browser tab-sharing permission → preview and optional tab zoom → text-area selection → single-view or continuous local reading → stop → review imported roles → save selected roles together.
 
 - [x] Open the Experience page in a normal new tab.
 - [x] Accept only a selected browser tab. Reject whole-screen/window capture and stop those tracks before processing. Do not request audio; stop any unexpected audio tracks.
@@ -132,7 +139,7 @@ A participant-approved live capture produced five positions across four employer
 - [x] Reuse the existing date estimates, required missing-date fields, saved-entry matching, and server duplicate protection. Never save directly from OCR.
 - [x] Remove the failed hosted-browser UI, services, endpoints, automation dependency and public HTML-fetch route.
 - [x] Verify real browser OCR under the app's security policy and with first-party assets. Verify the real tab-sharing permission/preview/capture/review flow with the participant.
-- [ ] Release the same commit through `main-server` and then `main-client`. Verify the API migrations and both production health endpoints.
+- [x] Release the same commit through `main-server` and then `main-client`. Verify the API migrations and both production health endpoints. [LinkedIn import release](https://github.com/MicroSaaSs/EmployeeRating/commit/31b2990439defa2949a2a870cf2cc9f721e79543)
 
 **Evidence:** A browser worker read three visible roles during the participant-approved shared-tab test. Two date labels needed review in the first mixed-language build. English is now the default, and regression tests cover date separators and replacement of old rows when recognized text is corrected. All three previously saved roles were marked **Already saved** after review. The repository uses synthetic images for OCR regression testing.
 
