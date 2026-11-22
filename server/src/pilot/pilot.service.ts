@@ -5,10 +5,15 @@ import { overlapStart, overlapEnd } from "./eligibility";
 import { cleanCompany } from "./companies";
 import { linkedInSourceInput, ratingInput, workImportInput, workInput } from "./inputs";
 
-const workQuery = `SELECT w.id, c.name AS company, w.title, w.start_date::text AS start, w.end_date::text AS end,
+export const workQuery = `SELECT w.id, c.name AS company, w.title, w.start_date::text AS start, w.end_date::text AS end,
     w.linkedin_source AS "linkedinSource"
   FROM work_history w JOIN companies c ON c.id = w.company_id WHERE w.user_id = $1 ORDER BY w.start_date DESC, w.id`;
 const workTitleKey = (title: string) => cleanCompany(title).toLowerCase().replace(/^1с(?=$|[\s:/()-])/u, "1c");
+function compareCompanies(first: string, second: string) {
+  const a = first.toLowerCase();
+  const b = second.toLowerCase();
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 const ratingFields = `r.id, r.overall, r.categories, r.feedback, r.anonymous, r.hidden, r.updated_at AS "updatedAt"`;
 const sharedWork = (author: string, colleague: string) => `EXISTS (
   SELECT 1 FROM work_history a JOIN work_history r ON a.company_id = r.company_id
@@ -123,11 +128,7 @@ export class PilotService {
   async importWork(userId: string, entries: ReturnType<typeof workImportInput>) {
     await this.db.limit("work-import:" + userId, 12);
     // Acquire company write locks in a consistent order across concurrent imports.
-    const ordered = [...entries].sort((a, b) => {
-      const first = a.entry.company.toLowerCase();
-      const second = b.entry.company.toLowerCase();
-      return first < second ? -1 : first > second ? 1 : 0;
-    });
+    const ordered = [...entries].sort((a, b) => compareCompanies(a.entry.company, b.entry.company));
     return this.db.transaction(async client => {
       await client.query("SELECT pg_advisory_xact_lock_shared(114010, 2)");
       await this.lockActiveAccount(client, userId);
@@ -137,6 +138,13 @@ export class PilotService {
       }
       return { saved, skipped: entries.length - saved };
     });
+  }
+
+  async replaceDraftWork(client: PoolClient, draftId: string, history: Array<ReturnType<typeof workInput>>) {
+    await client.query("DELETE FROM work_history WHERE user_id=$1", [draftId]);
+    // Use the same company lock order as the bulk work-history importer.
+    const ordered = [...history].sort((a, b) => compareCompanies(a.company, b.company));
+    for (const entry of ordered) await this.insertWork(client, draftId, entry, undefined, true);
   }
 
   async deleteWork(userId: string, entryId: string) {
@@ -150,29 +158,51 @@ export class PilotService {
 
   async setLinkedInProfile(userId: string, url: string | null) {
     await this.db.limit("profile-link:" + userId, 30);
-    const result = await this.db.pool.query(
-      "UPDATE users SET linkedin_profile_url = $2 WHERE id = $1 AND suspended_at IS NULL", [userId, url],
-    );
-    if (!result.rowCount) throw new UnauthorizedException("Sign in to continue.");
+    await this.db.transaction(async client => {
+      if (url) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [url]);
+        const protectedLink = await client.query(
+          "SELECT 1 FROM colleague_profiles WHERE linkedin_profile_url=$1 AND claimed_by IS DISTINCT FROM $2", [url, userId],
+        );
+        if (protectedLink.rowCount) throw new ConflictException("This profile has a shared draft or belongs to another member. Open it from Find colleagues.");
+      }
+      await this.lockActiveAccount(client, userId);
+      await client.query("UPDATE users SET linkedin_profile_url=$2 WHERE id=$1", [userId, url]);
+    });
   }
 
   async search(userId: string, term: string, page: number, profileUrl: string | null = null) {
     const pageSize = 50;
     const { rows } = await this.db.pool.query<{
-      professionals: Array<{ id: string; name: string; eligible: boolean }>;
+      professionals: Array<{ id: string; name: string; eligible: boolean; draft?: true }>;
       hasWorkHistory: boolean;
     }>(
-      `WITH matches AS (
-         SELECT DISTINCT u.id, u.name, true AS eligible
+      `WITH work_matches AS (
+         SELECT DISTINCT u.id
          FROM work_history a JOIN work_history r ON a.company_id = r.company_id
          JOIN users u ON u.id = r.user_id
          WHERE a.user_id = $1 AND u.id <> $1 AND u.suspended_at IS NULL
            AND ${overlapStart} <= ${overlapEnd}
-           AND CASE WHEN $5::text IS NOT NULL THEN u.linkedin_profile_url = $5
-                    ELSE strpos(lower(u.name), lower($2)) > 0 END
-         ORDER BY name, id LIMIT $3 OFFSET $4
+       ), matched_people AS (
+         SELECT u.id, u.name, true AS eligible, CASE WHEN d.id IS NOT NULL THEN true END AS draft
+         FROM work_matches w JOIN users u ON u.id=w.id
+         LEFT JOIN colleague_profiles d ON d.id=u.id
+         WHERE d.claimed_at IS NULL
+           AND CASE WHEN $5::text IS NOT NULL THEN
+             coalesce(d.linkedin_profile_url, u.linkedin_profile_url) = $5
+             OR EXISTS (SELECT 1 FROM colleague_profiles p WHERE p.claimed_by=u.id AND p.linkedin_profile_url=$5)
+           ELSE strpos(lower(u.name), lower($2)) > 0 END
+         UNION ALL
+         SELECT u.id, u.name, false AS eligible, true AS draft
+         FROM colleague_profiles d JOIN users u ON u.id=d.id
+         WHERE d.claimed_at IS NULL AND u.suspended_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM work_matches w WHERE w.id=d.id)
+           AND CASE WHEN $5::text IS NOT NULL THEN d.linkedin_profile_url=$5
+                    ELSE $2 <> '' AND strpos(lower(u.name), lower($2)) > 0 END
+       ), matches AS (
+         SELECT * FROM matched_people ORDER BY name, id LIMIT $3 OFFSET $4
        )
-       SELECT coalesce((SELECT jsonb_agg(p ORDER BY p.name, p.id) FROM matches p), '[]'::jsonb) AS professionals,
+       SELECT coalesce((SELECT jsonb_agg(jsonb_strip_nulls(to_jsonb(p)) ORDER BY p.name, p.id) FROM matches p), '[]'::jsonb) AS professionals,
          EXISTS (SELECT 1 FROM work_history WHERE user_id = $1) AS "hasWorkHistory"`,
       [userId, term, pageSize + 1, (page - 1) * pageSize, profileUrl],
     );
@@ -182,13 +212,21 @@ export class PilotService {
 
   async profile(userId: string, recipientId: string) {
     const result = await this.db.pool.query(
-      `SELECT id, name, true AS eligible FROM users u
-       WHERE id = $1 AND suspended_at IS NULL AND id <> $2 AND ${sharedWork("$2", "u.id")}`,
+      `WITH target AS (
+         SELECT u.id, u.name, d.id IS NOT NULL AND d.claimed_at IS NULL AS draft,
+           coalesce(d.claimed_by=$2,false) AS claimedByViewer,
+           u.id <> $2 AND ${sharedWork("$2", "u.id")} AS eligible
+         FROM users u LEFT JOIN colleague_profiles d ON d.id=$1
+         WHERE u.id=coalesce(d.claimed_by, $1) AND u.suspended_at IS NULL
+       )
+       SELECT id, name, eligible, draft, claimedByViewer AS "claimedByViewer"
+       FROM target WHERE draft OR eligible OR claimedByViewer`,
       [recipientId, userId],
     );
     const recipient = result.rows[0];
     if (!recipient) throw new NotFoundException("Colleague not found.");
-    return recipient;
+    const { draft, claimedByViewer, ...person } = recipient;
+    return { ...person, ...(draft ? { draft } : {}), ...(claimedByViewer ? { claimedByViewer } : {}) };
   }
 
   private async overlap(client: Pool | PoolClient, author: string, recipient: string) {
@@ -220,12 +258,13 @@ export class PilotService {
 
     return this.db.transaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock_shared(114010, 2)");
-      const { rows } = await client.query<{ id: string }>(
-        `SELECT id FROM users WHERE id IN ($1, $2) AND suspended_at IS NULL
+      const { rows } = await client.query<{ id: string; draft: boolean }>(
+        `SELECT id, issuer='eprorate:colleague-draft' AS draft FROM users WHERE id IN ($1, $2) AND suspended_at IS NULL
          ORDER BY id FOR NO KEY UPDATE`, [author, recipient],
       );
-      if (!rows.some((row) => row.id === author)) throw new UnauthorizedException("Sign in to continue.");
-      if (!rows.some(row => row.id === recipient)) {
+      if (!rows.some((row) => row.id === author && !row.draft)) throw new UnauthorizedException("Sign in to continue.");
+      const target = rows.find(row => row.id === recipient);
+      if (!target) {
         throw new NotFoundException("Colleague not found.");
       }
       const settings = await client.query<{ submissions_paused: boolean }>(
@@ -250,7 +289,8 @@ export class PilotService {
          SET overall = EXCLUDED.overall, categories = EXCLUDED.categories, feedback = EXCLUDED.feedback,
              anonymous = EXCLUDED.anonymous, eligibility = EXCLUDED.eligibility, updated_at = now()
          RETURNING id`,
-        [author, recipient, rating.overall, rating.categories, rating.feedback, rating.anonymous, { ...evidence, version: 1 }],
+        [author, recipient, rating.overall, rating.categories, rating.feedback, rating.anonymous,
+          { ...evidence, version: 1, ...(target.draft ? { fromSharedDraft: true } : {}) }],
       );
       return result.rows[0];
     });

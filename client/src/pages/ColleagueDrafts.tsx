@@ -1,41 +1,66 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { message, send, useResource } from "../utils/api";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { message, send, useResource, type SharedColleagueDraft } from "../utils/api";
 import { linkedInPosition, type LinkedInPosition } from "../utils/linkedinPositions";
 import { clearBrowserImport, pendingBrowserImport } from "../utils/browserImport";
 import LinkedInTabImport, { type LinkedInTabProfile } from "../components/LinkedInTabImport";
+import SharedWorkDatesTag from "../components/SharedWorkDatesTag";
+import ColleagueInvitationLink from "../components/ColleagueInvitationLink";
 
 interface Draft {
   id: string;
   name: string;
   linkedinProfileUrl: string;
   history: Array<{ company: string; title: string; start: string; end: string | null }>;
+  overlappingRoleIndexes?: number[];
+  canEdit?: boolean;
+  invitationId?: string | null;
   invitationStatus: "draft" | "requested" | "issued" | "redeemed" | "expired" | "revoked";
 }
 
 const statusLabels = {
   draft: "Private draft",
-  requested: "Invitation request pending",
-  issued: "Invitation prepared by an administrator",
-  redeemed: "Invitation redeemed",
-  expired: "Invitation expired",
-  revoked: "Invitation revoked",
+  requested: "Private draft",
+  issued: "Invitation link created",
+  redeemed: "Invitation accepted",
+  expired: "Invitation link expired",
+  revoked: "Invitation link revoked",
 };
 
-export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: { embedded?: boolean; initialUrl?: string }) {
+function DraftEditor({ id }: { id: string }) {
+  const draft = useResource<SharedColleagueDraft>("/colleague-profiles/" + id);
+  if (draft.data) return <ColleagueDrafts key={id} sharedDraft={draft.data} />;
+  return <main className="pilot-main">
+    <Link className="pilot-link" to={"/professionals/" + id}>Back to profile</Link>
+    <p className="mt-4" role={draft.error ? "alert" : "status"}>{draft.error ?? "Loading draft…"}</p>
+  </main>;
+}
+
+export default function ColleagueDraftsPage(props: { embedded?: boolean; initialUrl?: string }) {
+  const [params] = useSearchParams();
+  const draftId = params.get("edit");
+  if (!props.embedded && draftId && /^[a-f0-9-]{36}$/i.test(draftId)) return <DraftEditor id={draftId} />;
+  return <ColleagueDrafts {...props} />;
+}
+
+function ColleagueDrafts({ embedded = false, initialUrl = "", sharedDraft }: {
+  embedded?: boolean; initialUrl?: string; sharedDraft?: SharedColleagueDraft;
+}) {
   const [params, setParams] = useSearchParams();
-  const [url, setUrl] = useState(initialUrl || params.get("link") || "");
-  const [name, setName] = useState("");
-  const [positions, setPositions] = useState<LinkedInPosition[]>([]);
+  const navigate = useNavigate();
+  const [url, setUrl] = useState(sharedDraft?.linkedinProfileUrl || initialUrl || params.get("link") || "");
+  const [name, setName] = useState(sharedDraft?.name ?? "");
+  const [positions, setPositions] = useState<LinkedInPosition[]>(() => sharedDraft?.history.map((role, index) =>
+    linkedInPosition(index, role.company, role.title, role.start, role.end || "")) ?? []);
   const [fileName, setFileName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [matches, setMatches] = useState<Array<{ company: string; start: string; end: string }>>();
-  const [sourceLabel, setSourceLabel] = useState("PDF");
+  const [sourceLabel, setSourceLabel] = useState(sharedDraft ? "Saved draft" : "PDF");
   const [editing, setEditing] = useState<Draft>();
   const formRef = useRef<HTMLFormElement>(null);
-  const importToken = embedded ? "" : params.get("import") ?? "";
+  const importToken = embedded || sharedDraft ? "" : params.get("import") ?? "";
   const drafts = useResource<Draft[]>("/colleague-drafts");
   const today = new Date().toISOString().slice(0, 10);
 
@@ -83,7 +108,7 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
       ...linkedInPosition(index, role.company, role.title, role.start, role.end), needsReview: role.needsReview ?? false,
     })));
     setFileName(""); setSourceLabel("Shared LinkedIn tab"); setMatches(undefined); setError("");
-    setNotice("Work history captured. Enter your colleague’s name and review each role before checking shared dates or saving a private draft.");
+    setNotice("Work history captured. Enter your colleague’s name and review the roles before saving.");
   }
 
   function editDraft(draft: Draft) {
@@ -106,14 +131,28 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
     setError("");
     setNotice("");
     try {
-      await send("/colleague-drafts", "POST", {
+      const input = {
         name, linkedinProfileUrl: url,
         history: positions.map(position => ({ ...position.entry, end: position.entry.end || null })),
-      });
+      };
+      if (sharedDraft) {
+        await send("/colleague-profiles/" + sharedDraft.id, "PUT", { ...input, revision: sharedDraft.revision });
+        navigate("/professionals/" + sharedDraft.id, { replace: true });
+        return;
+      }
+      if (!editing) {
+        const result = await send<{ id: string; created: boolean }>("/colleague-profiles", "POST", input);
+        if (importToken) clearBrowserImport(importToken);
+        navigate("/professionals/" + result.id, {
+          state: { draftNotice: result.created ? "Shared draft saved." : "A shared draft already exists. You can review or edit it here." },
+        });
+        return;
+      }
+      await send("/colleague-drafts", "POST", input);
       setPositions([]);
       setFileName("");
       setName("");
-      setNotice(editing ? "Private colleague draft updated." : embedded ? "Private colleague draft saved. Open My private colleague drafts to view it or request an invitation." : "Private colleague draft saved. You can request an invitation below.");
+      setNotice("Private colleague draft updated.");
       setEditing(undefined);
       setMatches(undefined);
       if (importToken) {
@@ -128,14 +167,24 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
     }
   }
 
-  async function updateDraft(draft: Draft, remove = false) {
+  async function updateDraft(draft: Draft, action: "remove" | "share") {
+    const remove = action === "remove";
     if (remove && !window.confirm("Delete this private colleague draft?")) return;
     setPending(true);
     setError("");
     setNotice("");
     try {
-      await send("/colleague-drafts/" + draft.id + (remove ? "" : "/invitation"), remove ? "DELETE" : "POST");
-      setNotice(remove ? "Private draft deleted." : "Invitation requested. An administrator can prepare a link for your colleague.");
+      if (action === "share") {
+        const result = await send<{ id: string; created: boolean }>("/colleague-profiles", "POST", {
+          name: draft.name, linkedinProfileUrl: draft.linkedinProfileUrl, history: draft.history,
+        });
+        navigate("/professionals/" + result.id, {
+          state: { draftNotice: result.created ? "Shared draft published." : "A shared draft already exists. Your private draft is still saved." },
+        });
+        return;
+      }
+      await send("/colleague-drafts/" + draft.id, "DELETE");
+      setNotice("Private draft deleted.");
       drafts.refresh();
     } catch (failure) {
       setError(message(failure));
@@ -148,6 +197,11 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
     setMatches(undefined);
     setPositions(current => current.map(position => position.id === id
       ? { ...position, entry: { ...position.entry, [field]: value } } : position));
+  }
+
+  function addRole() {
+    setMatches(undefined);
+    setPositions(current => [...current, { ...linkedInPosition(1 + Math.max(0, ...current.map(role => role.id)), "", "", "", ""), endRequired: false }]);
   }
 
   async function checkOverlap(form: HTMLFormElement) {
@@ -170,25 +224,28 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
   const Container = embedded ? "section" : "main";
   return <Container className={embedded ? "" : "pilot-main"}>
     {!embedded && <>
-      <Link className="pilot-link" to="/professional-search-discovery">Back to colleagues</Link>
-      <h1 className="pilot-title mt-5">Private colleague drafts</h1>
+      <Link className="pilot-link" to={sharedDraft ? "/professionals/" + sharedDraft.id : "/professional-search-discovery"}>
+        {sharedDraft ? "Back to profile" : "Back to colleagues"}
+      </Link>
+      <h1 className="pilot-title mt-5">{sharedDraft ? "Edit shared draft" : "Add a colleague"}</h1>
     </>}
-    <p className="mt-2 max-w-2xl text-sm text-slate-600">Read a colleague’s LinkedIn tab or import their saved PDF, then review their details. Drafts are private to you. Checking shared dates uses the history you review; a draft does not make someone eligible to rate.</p>
+    <p className="mt-2 max-w-2xl text-sm text-slate-600">Members can review and update shared drafts. After the colleague verifies ownership, their work history becomes private and only they can edit it.</p>
     {(error || drafts.error) && <p className="mt-4 text-red-800" role="alert">{error || drafts.error}</p>}
     {notice && <p className="mt-4 text-success-800" role="status">{notice}</p>}
-    {embedded && <Link className="pilot-link mt-2 inline-block text-sm" to="/colleague-drafts">My private colleague drafts</Link>}
     <form ref={formRef} className={embedded ? "mt-4" : "pilot-card mt-6"} onSubmit={save}>
       <fieldset disabled={pending} className="min-w-0 space-y-4">
-        <legend className="text-lg font-semibold">{editing ? "Edit private colleague draft" : "Import a colleague"}</legend>
+        <legend className="text-lg font-semibold">{editing ? "Edit private colleague draft" : "Colleague details"}</legend>
         {editing && <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-600">Update {editing.name}’s details, then save your changes. The profile link stays attached to this draft.</p>
           <button type="button" className="pilot-button-secondary" onClick={cancelEdit}>Cancel editing</button>
         </div>}
         <label className="block text-sm font-medium">LinkedIn profile link
-          <input className="pilot-field mt-1" value={url} maxLength={512} required inputMode="url" readOnly={!!editing}
+          <input className="pilot-field mt-1" value={url} maxLength={512} required inputMode="url" readOnly={!!editing || !!sharedDraft}
             placeholder="https://www.linkedin.com/in/your-colleague/" onChange={event => { setUrl(event.target.value); setMatches(undefined); }} />
         </label>
-        {!editing && <>
+        {!editing && !sharedDraft && <details className="rounded-lg border border-border p-4">
+        <summary className="cursor-pointer font-medium">Import work history from LinkedIn</summary>
+        <div className="mt-4 space-y-4">
         <LinkedInTabImport url={url} disabled={pending} subject="colleague" onImported={acceptTabProfile} />
         <h2 className="border-t border-border pt-4 text-sm font-semibold">Or import a saved PDF</h2>
         <p className="text-sm text-slate-600">Open their LinkedIn profile on desktop and choose More or Resources, then Save to PDF. The file is read in your browser.</p>
@@ -207,15 +264,16 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
             <span className="min-w-0 truncate text-slate-600" role="status">{pending ? "Working…" : fileName || "No PDF selected"}</span>
           </span>
         </label>
-        </>}
+        </div>
+        </details>}
+        <label className="block text-sm font-medium">Colleague name
+          <input className="pilot-field mt-1" required value={name} maxLength={150} onChange={event => setName(event.target.value)} />
+        </label>
         {positions.length > 0 && <>
-          <label className="block text-sm font-medium">Colleague name
-            <input className="pilot-field mt-1" required value={name} maxLength={150} onChange={event => setName(event.target.value)} />
-          </label>
           <p className="text-sm text-slate-600">Check the name and work dates. Estimated dates use the first or last day of the month or year shown in the source.</p>
           <div className="space-y-4">
             {positions.map(position => <div key={position.id} className="space-y-3 rounded-lg border border-border p-4">
-              <p className="text-sm text-slate-600">{sourceLabel} dates · {position.originalStart || "Missing start"} to {position.originalEnd || "present"}</p>
+              {position.originalStart && <p className="text-sm text-slate-600">{sourceLabel} dates · {position.originalStart} to {position.originalEnd || "present"}</p>}
               {position.needsReview && <p className="text-sm font-medium text-amber-900">This heading was unclear. Check the company, job title and dates before saving.</p>}
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-sm font-medium">Company<input className="pilot-field mt-1" required maxLength={120} value={position.entry.company} onChange={event => changePosition(position.id, "company", event.target.value)} /></label>
@@ -229,10 +287,12 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
               }}>Exclude this role</button>}
             </div>)}
           </div>
-          <div className="flex flex-wrap gap-3">
-            <button type="button" className="pilot-button-secondary" onClick={event => void checkOverlap(event.currentTarget.form!)}>Check shared work dates</button>
-            <button className="pilot-button">{editing ? "Save changes" : "Save private draft"}</button>
-          </div>
+        </>}
+        <div className="flex flex-wrap gap-3">
+          {!editing && positions.length < 50 && <button type="button" className="pilot-button-secondary" onClick={addRole}>Add work role</button>}
+          {positions.length > 0 && <button type="button" className="pilot-button-secondary" onClick={event => void checkOverlap(event.currentTarget.form!)}>Check shared work dates</button>}
+          <button className="pilot-button">{editing || sharedDraft ? "Save changes" : "Create shared draft"}</button>
+        </div>
           {matches && <section className="rounded-lg bg-primary-50 p-4 text-sm" aria-labelledby="draft-overlap-heading">
             <h2 id="draft-overlap-heading" className="font-semibold">Shared work dates</h2>
             {matches.length ? <ul className="mt-2 space-y-2">{matches.map(match => <li key={match.company + match.start + match.end}>
@@ -240,11 +300,10 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
             </li>)}</ul> : <p className="mt-2">No overlapping work dates found. Check both the company names and dates.</p>}
             <p className="mt-2 text-slate-600">Based on your saved work history and the draft dates you reviewed.</p>
           </section>}
-        </>}
       </fieldset>
     </form>
-    {!embedded && <section className="mt-7" aria-labelledby="saved-drafts-heading">
-      <h2 id="saved-drafts-heading" className="text-xl font-semibold">Saved drafts</h2>
+    {!embedded && !sharedDraft && <section className="mt-7" aria-labelledby="saved-drafts-heading">
+      <h2 id="saved-drafts-heading" className="text-xl font-semibold">Previously saved private drafts</h2>
       {!drafts.data && !drafts.error && <p className="mt-3" role="status">Loading drafts…</p>}
       {drafts.data?.length === 0 && <p className="mt-3 text-slate-600">You have no saved colleague drafts.</p>}
       <ul className="mt-3 space-y-4">
@@ -252,19 +311,26 @@ export default function ColleagueDrafts({ embedded = false, initialUrl = "" }: {
           <h3 className="text-lg font-semibold">{draft.name}</h3>
           <a className="pilot-link mt-1 inline-block break-all text-sm" href={draft.linkedinProfileUrl} rel="noreferrer" target="_blank">Open LinkedIn profile</a>
           <p className="mt-2 text-sm text-slate-600">{statusLabels[draft.invitationStatus]}</p>
+          {draft.invitationStatus !== "redeemed" && <section className="mt-4 rounded-lg bg-primary-50 p-4">
+            <ColleagueInvitationLink endpoint={"/colleague-drafts/" + draft.id + "/invitation-link"}
+              profile={draft.linkedinProfileUrl} replaceId={draft.invitationStatus === "issued" ? draft.invitationId : null}
+              disabled={pending} onCreated={drafts.refresh} />
+          </section>}
           <details className="mt-3 text-sm">
             <summary className="cursor-pointer">Reviewed work history</summary>
             <ul className="mt-2 space-y-2">{draft.history.map((role, index) => <li key={index}>
-              <p className="font-medium">{role.title} · {role.company}</p>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <p className="font-medium">{role.title} · {role.company}</p>
+                {draft.overlappingRoleIndexes?.includes(index) && <SharedWorkDatesTag />}
+              </div>
               <p className="text-slate-600">{role.start} to {role.end || "present"}</p>
             </li>)}</ul>
           </details>
           <div className="mt-4 flex flex-wrap gap-3">
-            {draft.invitationStatus === "draft" &&
+            {(draft.canEdit ?? draft.invitationStatus === "draft") &&
               <button type="button" className="pilot-button-secondary" disabled={pending || positions.length > 0 || !!editing} onClick={() => editDraft(draft)}>Edit draft</button>}
-            {["draft", "expired", "revoked"].includes(draft.invitationStatus) &&
-              <button type="button" className="pilot-button-secondary" disabled={pending || !!editing} onClick={() => void updateDraft(draft)}>Request invitation</button>}
-            <button type="button" className="pilot-link text-sm" disabled={pending || !!editing} onClick={() => void updateDraft(draft, true)}>Delete draft</button>
+            <button type="button" className="pilot-button-secondary" disabled={pending || !!editing} onClick={() => void updateDraft(draft, "share")}>Share draft with members</button>
+            <button type="button" className="pilot-link text-sm" disabled={pending || !!editing} onClick={() => void updateDraft(draft, "remove")}>Delete private draft</button>
           </div>
         </li>)}
       </ul>

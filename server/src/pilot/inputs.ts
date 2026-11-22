@@ -38,10 +38,10 @@ export function workInput(body: unknown) {
   return { company, title, start, end };
 }
 
-export function colleagueDraftInput(body: unknown) {
+export function colleagueDraftInput(body: unknown, allowEmpty = false) {
   const draft = object(body);
-  if (!Array.isArray(draft.history) || draft.history.length < 1 || draft.history.length > 50) {
-    throw new BadRequestException("Review between 1 and 50 work history entries.");
+  if (!Array.isArray(draft.history) || (!allowEmpty && draft.history.length < 1) || draft.history.length > 50) {
+    throw new BadRequestException(allowEmpty ? "Review up to 50 work history entries." : "Review between 1 and 50 work history entries.");
   }
   return {
     name: text(draft.name, "Colleague name", 1, 150),

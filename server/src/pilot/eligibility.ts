@@ -4,3 +4,8 @@ export const overlapEnd = `least(
   coalesce(a.end_date, (now() AT TIME ZONE 'UTC')::date),
   coalesce(r.end_date, (now() AT TIME ZONE 'UTC')::date)
 )`;
+
+export const overlapsWorkEntry = (viewer: string) => `EXISTS (
+  SELECT 1 FROM work_history a WHERE a.user_id = ${viewer} AND a.company_id = r.company_id
+    AND ${overlapStart} <= ${overlapEnd}
+)`;

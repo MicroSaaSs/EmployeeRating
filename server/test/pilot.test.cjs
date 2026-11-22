@@ -415,13 +415,15 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     const draftId = draftCreated.json.id;
     assert.equal((await api(draftPath, { ...alice, method: "POST", body: draftBody })).json.id, draftId);
     const correctedDraft = { ...draftBody, name: "Corrected Colleague", history: [
-      { ...draftBody.history[0], title: "Senior Developer", start: "2021-02-17", end: null },
+      { ...draftBody.history[0], start: "2019-01-01", end: "2020-12-31" },
+      { ...draftBody.history[0], company: "Same Co", title: "Senior Developer", start: "2021-02-17", end: null },
     ] };
     assert.equal((await api(draftPath, { ...alice, method: "POST", body: correctedDraft })).json.id, draftId);
     const correctedSaved = (await api(draftPath, alice)).json;
     assert.equal(correctedSaved.length, 1);
     assert.equal(correctedSaved[0].name, correctedDraft.name);
     assert.deepEqual(correctedSaved[0].history, correctedDraft.history);
+    assert.deepEqual(correctedSaved[0].overlappingRoleIndexes, [1]);
     assert.equal((await api(draftPath, { ...alice, method: "POST", body: draftBody })).json.id, draftId);
     assert.equal((await api(draftPath, alice)).json.length, 1);
     assert.deepEqual((await api(draftPath, other)).json, []);
@@ -467,6 +469,40 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     assert.equal((await api(draftPath + "/" + draftId, { ...alice, method: "DELETE" })).status, 204);
     assert.deepEqual((await api(draftPath, alice)).json, []);
     await db.pool.query("DELETE FROM users WHERE id=$1", [joinedDraftColleague.id]);
+
+    const pendingDraft = (await api(draftPath, { ...alice, method: "POST", body: draftBody })).json.id;
+    const pendingPath = draftPath + "/" + pendingDraft;
+    assert.equal((await api(pendingPath + "/invitation", { ...alice, method: "POST" })).status, 204);
+    const directLinkPath = pendingPath + "/invitation-link";
+    assert.equal((await api(directLinkPath, { ...other, method: "POST" })).status, 404);
+    const directLinks = await Promise.all([1, 2].map(() => api(directLinkPath, { ...alice, method: "POST" })));
+    assert.deepEqual(directLinks.map(({ status }) => status).sort(), [201, 409]);
+    const firstLink = directLinks.find(({ status }) => status === 201).json;
+    assert.match(firstLink.url, /^http:\/\/localhost:4028\/#invite=[\w-]{43}$/);
+    assert.equal((await api(requestsPath, operator)).json.requests.length, 0);
+    assert.equal((await searchLink(draftBody.linkedinProfileUrl, other)).json.professionals.length, 0);
+    const directDraft = (await api(draftPath, alice)).json[0];
+    assert.equal(directDraft.invitationStatus, "issued");
+    assert.equal(directDraft.canEdit, true);
+    assert.equal(directDraft.url, undefined);
+    assert.equal((await api(pendingPath + "/invitation", { ...alice, method: "POST" })).status, 409);
+    const replaceLink = await api(directLinkPath, {
+      ...alice, method: "POST", body: { replaceId: directDraft.invitationId },
+    });
+    assert.equal(replaceLink.status, 201);
+    assert.notEqual(firstLink.url, replaceLink.json.url);
+    assert.equal((await api(directLinkPath, {
+      ...alice, method: "POST", body: { replaceId: directDraft.invitationId },
+    })).status, 409);
+    const firstLinkToken = new URLSearchParams(new URL(firstLink.url).hash.slice(1)).get("invite");
+    const { rows: [oldLink] } = await db.pool.query("SELECT revoked_at FROM invites WHERE digest=$1", [digest(firstLinkToken)]);
+    assert.ok(oldLink.revoked_at);
+    const newLinkToken = new URLSearchParams(new URL(replaceLink.json.url).hash.slice(1)).get("invite");
+    const issuedAttempt = await begin(newLinkToken);
+    assert.equal((await complete("other", issuedAttempt.state, issuedAttempt.browser)).headers.get("location"), origin + "/dashboard-home");
+    assert.equal((await api(draftPath, alice)).json[0].invitationStatus, "redeemed");
+    assert.equal((await api(directLinkPath, { ...alice, method: "POST" })).status, 409);
+    assert.equal((await api(pendingPath, { ...alice, method: "DELETE" })).status, 204);
 
     const revisedFeedback = "This revised feedback describes a different example from our work together.";
     assert.equal((await api("/ratings/for/" + bob.id, {
@@ -530,6 +566,111 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     assert.equal((await api("/moderation/submissions", { ...operator, method: "PUT", body: { paused: true } })).status, 204);
     assert.equal((await api("/ratings/for/" + bob.id, { ...alice, method: "PUT", body })).status, 409);
     assert.equal((await api("/ratings/mine", restoredBob)).json.received.length, 1);
+
+    // Shared colleague profiles are independent of the earlier private drafts.
+    assert.equal((await api("/moderation/submissions", { ...operator, method: "PUT", body: { paused: false } })).status, 204);
+    const sharedProfiles = "/colleague-profiles";
+    const sharedUrl = "https://www.linkedin.com/in/shared-colleague/";
+    const newColleague = { name: "Shared Colleague", linkedinProfileUrl: sharedUrl, history: [] };
+    assert.equal((await api(sharedProfiles, { method: "POST", body: newColleague })).status, 401);
+    assert.equal((await api(sharedProfiles, { ...alice, method: "POST", body: {
+      ...newColleague, linkedinProfileUrl: profileLink,
+    } })).status, 409, "A member's existing profile link prevents a duplicate draft");
+    const drafts = await Promise.all([alice, other].map((member) =>
+      api(sharedProfiles, { ...member, method: "POST", body: newColleague })));
+    assert(drafts.every(({ status }) => status === 201));
+    const sharedId = drafts[0].json.id;
+    assert(drafts.every(({ json }) => json.id === sharedId));
+    assert.equal(drafts.filter(({ json }) => json.created).length, 1);
+    const shared = sharedProfiles + "/" + sharedId;
+    const sharedProfessional = "/professionals/" + sharedId;
+    assert.deepEqual((await api("/professionals/search?q=Shared%20Colleague", other)).json.professionals, [
+      { id: sharedId, name: newColleague.name, eligible: false, draft: true },
+    ]);
+    assert.deepEqual((await searchLink("linkedin.com/in/Shared-Colleague", other)).json.professionals, [
+      { id: sharedId, name: newColleague.name, eligible: false, draft: true },
+    ]);
+    assert.equal((await api(shared, other)).json.history.length, 0);
+    assert.equal((await saveProfileLink(other, sharedUrl)).status, 409, "A self-reported link must not claim a shared draft");
+
+    const sharedRole = { company: "Same Co", title: "Engineer", start: "2021-01-01", end: null };
+    const editedColleague = { ...newColleague, history: [sharedRole], revision: 1 };
+    assert.equal((await api(shared, { ...other, method: "PUT", body: editedColleague })).status, 204);
+    assert.equal((await api(shared, { ...alice, method: "PUT", body: editedColleague })).status, 409);
+    assert.equal((await api(sharedProfessional, alice)).json.eligible, true);
+    assert.equal((await api(sharedProfessional, other)).json.eligible, false);
+    const draftRatingPath = "/ratings/for/" + sharedId;
+    assert.equal((await api(draftRatingPath, { ...other, method: "PUT", body })).status, 403);
+    const privateDraftRating = await api(draftRatingPath, { ...alice, method: "PUT", body: { ...body, anonymous: true } });
+    assert.equal(privateDraftRating.status, 200, JSON.stringify(privateDraftRating.json));
+    const namedDraftRating = await api(draftRatingPath, { ...restoredBob, method: "PUT", body: { ...body, anonymous: false } });
+    assert.equal(namedDraftRating.status, 200, JSON.stringify(namedDraftRating.json));
+    assert.equal((await api(draftRatingPath, other)).json.rating, null);
+
+    const issuedByAlice = await api(shared + "/invitations", { ...alice, method: "POST" });
+    const issuedByBob = await api(shared + "/invitations", { ...restoredBob, method: "POST" });
+    const spareInvitation = await api(shared + "/invitations", { ...other, method: "POST" });
+    assert([issuedByAlice, issuedByBob, spareInvitation].every(({ status }) => status === 201));
+    assert.notEqual(issuedByAlice.json.url, issuedByBob.json.url);
+    const tokenOf = result => new URLSearchParams(new URL(result.json.url).hash.slice(1)).get("invite");
+    const claimant = await join("shared-colleague", newColleague.name);
+    await work(claimant, sharedRole.company, sharedRole.start, sharedRole.end);
+    const signIn = await begin(tokenOf(issuedByBob));
+    const invitedOwner = await complete("shared-colleague", signIn.state, signIn.browser + "; " + claimant.cookie);
+    assert.equal(invitedOwner.headers.get("location"), origin + sharedProfessional + "?claim=1");
+    const owner = { ...claimant, cookie: cookieFrom(invitedOwner, "sid") };
+    assert.equal((await api("/auth/session", owner)).json.user.id, claimant.id);
+    assert.equal((await api(shared, owner)).json.invitedBy, restoredBob.name);
+    assert.equal((await api("/ratings/mine", owner)).json.received.length, 0);
+    const wrongRecipient = await begin(tokenOf(issuedByAlice));
+    const forwardedInvite = await complete("other", wrongRecipient.state, wrongRecipient.browser);
+    assert.equal(forwardedInvite.headers.get("location"), origin + sharedProfessional + "?claim=1");
+    assert.equal((await api("/ratings/mine", { cookie: cookieFrom(forwardedInvite, "sid") })).json.received.length, 0);
+
+    const claimPath = shared + "/claim";
+    const claimQueue = "/pilot/colleague-claims";
+    const challenge = await api(claimPath, { ...owner, method: "POST" });
+    assert.match(challenge.json.code, /^EPR-[\w-]{16}$/);
+    assert.equal((await api(shared, other)).json.claim, null);
+    assert.equal((await api(claimQueue, owner)).status, 403);
+    assert.equal((await api(claimPath, { ...owner, method: "PUT", body: { revision: 2 } })).status, 204);
+    const [pendingClaim] = (await api(claimQueue, operator)).json.claims;
+    assert.equal(pendingClaim.code, undefined, "The administrator has to obtain the code from the LinkedIn profile");
+    const reviewClaim = code => api(claimQueue + "/" + pendingClaim.id, { ...operator, method: "PUT", body: { code } });
+    assert.equal((await reviewClaim("EPR-0000000000000000")).status, 400);
+    const updatedColleague = { ...editedColleague, revision: 2, history: [
+      sharedRole, { ...sharedRole, company: "Earlier Employer", start: "2018-01-01", end: "2019-12-31" },
+    ] };
+    assert.equal((await api(shared, { ...other, method: "PUT", body: updatedColleague })).status, 204);
+    const updatedDraft = (await api(shared, alice)).json;
+    assert.deepEqual(updatedDraft.overlappingRoleIds, [updatedDraft.history.find(role => role.company === "Same Company").id]);
+    assert.deepEqual((await api(shared, other)).json.overlappingRoleIds, []);
+    assert.equal((await reviewClaim(challenge.json.code)).status, 409, "An edit requires the claimant to review again");
+    assert.equal((await api(claimPath, { ...owner, method: "PUT", body: { revision: 2 } })).status, 409);
+    assert.equal((await api(claimPath, { ...owner, method: "PUT", body: { revision: 3 } })).status, 204);
+    assert.equal((await reviewClaim(challenge.json.code)).status, 204);
+    assert.equal((await api(shared, alice)).status, 404);
+    assert.equal((await api(shared, { ...other, method: "PUT", body: { ...updatedColleague, revision: 3 } })).status, 404);
+    assert.equal((await api(shared + "/invitations", { ...alice, method: "POST" })).status, 404);
+    assert.equal((await api(draftRatingPath, { ...alice, method: "PUT", body })).status, 404);
+    const revokedInvite = await begin(tokenOf(spareInvitation));
+    assert.match((await complete("other", revokedInvite.state, revokedInvite.browser)).headers.get("location"), /error=invite/);
+    assert.equal((await api(sharedProfessional, alice)).json.id, owner.id);
+    assert.equal((await api(sharedProfessional, owner)).json.claimedByViewer, true);
+    assert.equal((await api(sharedProfessional, other)).status, 404);
+    assert.deepEqual((await searchLink(sharedUrl)).json.professionals, [
+      { id: owner.id, name: owner.name, eligible: true },
+    ]);
+    const ownedHistory = (await api("/work-history", owner)).json.history;
+    assert.equal(ownedHistory.length, 2, "The owner's existing role must be deduplicated");
+    const ownedRolePath = "/work-history/" + ownedHistory[0].id;
+    assert.equal((await api(ownedRolePath, { ...other, method: "PUT", body: sharedRole })).status, 404);
+    assert.equal((await api(ownedRolePath, { ...owner, method: "PUT", body: sharedRole })).status, 204);
+    const delivered = (await api("/ratings/mine", owner)).json.received;
+    assert.deepEqual(delivered.map(({ id, name }) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)), [
+      { id: privateDraftRating.json.id, name: "Anonymous colleague" },
+      { id: namedDraftRating.json.id, name: restoredBob.name },
+    ]);
 
     const auth = new AuthService(db, app.get(LinkedInService));
     assert.equal((await auth.sessionUser({ cookies: { sid: alice.cookie.split("=")[1] } })).id, alice.id);

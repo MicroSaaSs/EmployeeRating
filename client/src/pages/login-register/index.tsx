@@ -73,11 +73,12 @@ export function PilotPolicy({ privacy = false }: { privacy?: boolean }) {
     <div className="pilot-card mt-6 space-y-4 leading-relaxed">
       {privacy ? <>
         <p>We use your LinkedIn account identifier and display name for sign-in. If you accept an invitation, we record that it was used by your account. E-ProRate uses the work dates you save to find colleagues who worked at the same company at the same time. Those colleagues can find your profile and give you private feedback. Your saved employment dates stay private.</p>
-        <p>Ratings are private to the author and recipient. Anonymous mode hides your name from the recipient. Authorized operators can review reported feedback, authorship, and the recorded date overlap. Work history and feedback can identify people, so avoid naming others in a rating.</p>
+        <p>Members can add and update a shared draft using a public LinkedIn profile link. Signed-in members can find the draft and view its draft roles. Once you verify ownership, you control those roles and they become private.</p>
+        <p>Ratings are private to the author and recipient. Feedback for a shared draft becomes available to the colleague who verifies ownership. Anonymous mode hides your name from the recipient. Authorized administrators can review reported feedback, authorship, and the recorded date overlap.</p>
         <p>Administrators can see aggregate activity, including how often received ratings are opened and how long report decisions take.</p>
         <p>Contact E-ProRate support to request access to or removal of your account data.</p>
       </> : <>
-        <p>Enter your own work history accurately. Keep ratings relevant to your time working together and base feedback on your own experience.</p>
+        <p>Enter work history accurately. Use public professional information for shared drafts. Keep ratings relevant to your time working together and base feedback on your own experience.</p>
         <p>Use the report action for harassment, impersonation, or sensitive personal information. An operator can hide a rating while handling a report.</p>
         <p>Administrators can suspend accounts. Contact E-ProRate support if you believe your account was suspended in error.</p>
       </>}

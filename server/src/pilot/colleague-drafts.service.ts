@@ -1,7 +1,10 @@
 import { ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { digest, newToken } from "../auth/auth.service";
+import { clientOrigin } from "../config";
 import { Database } from "../database/database";
 import type { colleagueDraftInput } from "./inputs";
 import { cleanCompany } from "./companies";
+import { overlapsWorkEntry } from "./eligibility";
 
 const invitationStatus = `CASE WHEN i.id IS NULL THEN 'requested'
   WHEN i.revoked_at IS NOT NULL THEN 'revoked'
@@ -15,7 +18,21 @@ export class ColleagueDraftsService {
   async list(ownerId: string) {
     const { rows } = await this.db.pool.query(
       `SELECT d.id, d.name, d.linkedin_profile_url AS "linkedinProfileUrl", d.history,
-        CASE WHEN d.invitation_requested_at IS NULL THEN 'draft' ELSE ${invitationStatus} END AS "invitationStatus"
+        ARRAY(
+          SELECT (r.position - 1)::integer
+          FROM (
+            SELECT role.position, (role.entry->>'start')::date AS start_date, (role.entry->>'end')::date AS end_date,
+              coalesce(alias.company_id, c.id) AS company_id
+            FROM jsonb_array_elements(d.history) WITH ORDINALITY role(entry, position)
+            LEFT JOIN company_aliases alias ON alias.name_key=lower(role.entry->>'company')
+            LEFT JOIN companies c ON alias.company_id IS NULL AND c.name_key=lower(role.entry->>'company')
+          ) r
+          WHERE ${overlapsWorkEntry("$1")}
+          ORDER BY r.position
+        ) AS "overlappingRoleIndexes",
+        d.invitation_requested_at IS NULL AS "canEdit", d.invitation_id AS "invitationId",
+        CASE WHEN d.invitation_requested_at IS NULL AND d.invitation_id IS NULL
+          THEN 'draft' ELSE ${invitationStatus} END AS "invitationStatus"
        FROM colleague_drafts d LEFT JOIN invites i ON i.id = d.invitation_id
        WHERE d.owner_id = $1 ORDER BY d.updated_at DESC, d.id`, [ownerId],
     );
@@ -69,17 +86,57 @@ export class ColleagueDraftsService {
     await this.db.transaction(async client => {
       const owner = await client.query("SELECT id FROM users WHERE id=$1 AND suspended_at IS NULL FOR NO KEY UPDATE", [ownerId]);
       if (!owner.rowCount) throw new UnauthorizedException("Sign in to continue.");
-      const { rows: [draft] } = await client.query<{ invitation_requested_at: Date | null; can_request: boolean }>(
-        `SELECT d.invitation_requested_at,
+      const { rows: [draft] } = await client.query<{ invitation_requested_at: Date | null; invitation_id: string | null; can_request: boolean }>(
+        `SELECT d.invitation_requested_at, d.invitation_id,
            (i.revoked_at IS NOT NULL OR (i.expires_at <= now() AND i.redeemed_at IS NULL)) AS can_request
          FROM colleague_drafts d LEFT JOIN invites i ON i.id=d.invitation_id
          WHERE d.owner_id=$1 AND d.id=$2 FOR UPDATE OF d`, [ownerId, id],
       );
       if (!draft) throw new NotFoundException("Colleague draft not found.");
-      if (draft.invitation_requested_at && !draft.can_request) throw new ConflictException("An invitation has already been requested.");
+      if ((draft.invitation_requested_at || draft.invitation_id) && !draft.can_request) {
+        throw new ConflictException("This draft already has an invitation request or link.");
+      }
       await client.query(
         "UPDATE colleague_drafts SET invitation_requested_at=now(), invitation_id=NULL, updated_at=now() WHERE id=$1", [id],
       );
+    });
+  }
+
+  async createInvitationLink(ownerId: string, id: string, replaceId: string | undefined) {
+    await this.db.limit("colleague-invite-request:" + ownerId, 20);
+    const token = newToken();
+    const url = clientOrigin() + "/#invite=" + token;
+    return this.db.transaction(async client => {
+      const owner = await client.query("SELECT id FROM users WHERE id=$1 AND suspended_at IS NULL FOR NO KEY UPDATE", [ownerId]);
+      if (!owner.rowCount) throw new UnauthorizedException("Sign in to continue.");
+      const { rows: [draft] } = await client.query<{ invitation_id: string | null }>(
+        "SELECT invitation_id FROM colleague_drafts WHERE id=$1 AND owner_id=$2 FOR UPDATE", [id, ownerId],
+      );
+      if (!draft) throw new NotFoundException("Colleague draft not found.");
+      if (draft.invitation_id) {
+        const { rows: [previous] } = await client.query<{ redeemed_at: Date | null; active: boolean }>(
+          "SELECT redeemed_at, revoked_at IS NULL AND expires_at>now() AS active FROM invites WHERE id=$1 FOR UPDATE",
+          [draft.invitation_id],
+        );
+        if (previous?.redeemed_at) throw new ConflictException("This invitation was already accepted.");
+        if (previous?.active && draft.invitation_id !== replaceId) {
+          throw new ConflictException("This draft already has an invitation link. Refresh the page to replace it.");
+        }
+        await client.query(
+          "UPDATE invites SET revoked_at=now() WHERE id=$1 AND revoked_at IS NULL AND expires_at>now()", [draft.invitation_id],
+        );
+      }
+      const { rows: [invitation] } = await client.query<{ id: string; expiresAt: Date }>(
+        `INSERT INTO invites (digest, role, expires_at, invited_by)
+         VALUES ($1,'participant',now() + interval '7 days',$2) RETURNING id, expires_at AS "expiresAt"`,
+        [digest(token), ownerId],
+      );
+      await client.query(
+        "UPDATE colleague_drafts SET invitation_id=$2, invitation_requested_at=NULL WHERE id=$1",
+        [id, invitation.id],
+      );
+      await client.query("UPDATE pilot_activity_counts SET invites_issued=invites_issued+1 WHERE id");
+      return { url, expiresAt: invitation.expiresAt };
     });
   }
 

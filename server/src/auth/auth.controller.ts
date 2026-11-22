@@ -42,10 +42,10 @@ export class AuthController {
   ) {
     const origin = clientOrigin();
     try {
-      const session = await this.auth.complete(code, state, req.cookies?.[attemptCookie], req.cookies?.sid);
+      const { session, colleagueProfileId } = await this.auth.complete(code, state, req.cookies?.[attemptCookie], req.cookies?.sid);
       res.clearCookie(attemptCookie, cookie("/api/auth/linkedin"));
       res.cookie("sid", session, { ...cookie("/"), maxAge: sessionHours * 3_600_000 });
-      return res.redirect(303, origin + "/dashboard-home");
+      return res.redirect(303, origin + (colleagueProfileId ? "/professionals/" + colleagueProfileId + "?claim=1" : "/dashboard-home"));
     } catch (error) {
       const reason = error instanceof AccountSuspendedException ? "suspended"
         : error instanceof ForbiddenException ? "invite" : "signin";

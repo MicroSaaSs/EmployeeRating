@@ -55,7 +55,7 @@ export class AuthService {
 
     const identity = await this.linkedIn.verify(code);
     const session = newToken();
-    await this.db.transaction(async (client) => {
+    const colleagueProfileId = await this.db.transaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [identity.issuer + ":" + identity.subject]);
       const { rows: [existing] } = await client.query<{ id: string; role: SessionUser["role"]; suspended_at: Date | null }>(
         "SELECT id, role, suspended_at FROM users WHERE issuer = $1 AND subject = $2 FOR NO KEY UPDATE",
@@ -63,10 +63,11 @@ export class AuthService {
       );
       if (existing?.suspended_at) throw new AccountSuspendedException();
 
-      let invitation: Pick<SessionUser, "id" | "role"> | undefined;
+      type ActiveInvite = Pick<SessionUser, "id" | "role"> & { colleague_profile_id: string | null };
+      let invitation: ActiveInvite | undefined;
       if (attempt.invite_digest) {
-        const { rows: [activeInvite] } = await client.query<Pick<SessionUser, "id" | "role">>(
-          `SELECT id, role FROM invites
+        const { rows: [activeInvite] } = await client.query<ActiveInvite>(
+          `SELECT id, role, colleague_profile_id FROM invites
            WHERE digest = $1 AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > now()
            FOR UPDATE`, [attempt.invite_digest],
         );
@@ -97,8 +98,9 @@ export class AuthService {
            invites_redeemed = invites_redeemed + $2 WHERE id`,
         [Number(attempt.counted), Number(Boolean(invitation))],
       );
+      return invitation?.colleague_profile_id ?? null;
     });
-    return session;
+    return { session, colleagueProfileId };
   }
 
   async sessionUser(req: Request): Promise<SessionUser | undefined> {

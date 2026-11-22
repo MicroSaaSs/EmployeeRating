@@ -6,7 +6,7 @@ import ColleagueDrafts from "../ColleagueDrafts";
 import { linkedInTabUrl } from "../../utils/linkedinTabCapture";
 
 type Directory = {
-  professionals: Array<Colleague & { eligible: boolean }>;
+  professionals: Colleague[];
   hasWorkHistory: boolean;
   hasMore: boolean;
 };
@@ -47,10 +47,10 @@ export default function ProfessionalSearchDiscovery() {
   return (
     <main className="pilot-main">
       <h1 className="pilot-title">Find colleagues</h1>
-      <p className="mt-2 text-slate-600">Find people whose saved work dates overlap yours at the same company.</p>
+      <p className="mt-2 text-slate-600">Find colleagues you worked with, or look up a shared draft for someone who hasn’t joined yet.</p>
       <div className="mt-3 flex flex-wrap items-center gap-4">
-        <button type="button" className="pilot-button-secondary" onClick={() => openImport(name)}>Import colleague from LinkedIn</button>
-        <Link className="pilot-link text-sm" to="/colleague-drafts">My private colleague drafts</Link>
+        <button type="button" className="pilot-button-secondary" onClick={() => openImport(name)}>Add a colleague</button>
+        <Link to="/colleague-drafts#saved-drafts-heading" className="pilot-link text-sm">Previously saved drafts</Link>
       </div>
       {result.data && !result.data.hasWorkHistory && <section className="pilot-card mt-5">
         <h2 className="font-semibold">Add your work history to find colleagues</h2>
@@ -77,23 +77,23 @@ export default function ProfessionalSearchDiscovery() {
         </div>
         <button className="pilot-button">Search</button>
       </form>
-      <p id="colleague-search-help" className="mt-2 text-sm text-slate-600">You can search by LinkedIn link when a colleague has added it to their account.</p>
+      <p id="colleague-search-help" className="mt-2 text-sm text-slate-600">Search members with overlapping work dates and shared drafts by name or LinkedIn profile link.</p>
       {result.error && <p role="alert" className="mt-5 text-red-800">{result.error}</p>}
       {!result.data && !result.error && <p role="status" className="mt-5">Loading colleagues…</p>}
-      {result.data?.hasWorkHistory && !result.data.professionals.length && <section className="pilot-card mt-5">
+      {result.data && (result.data.hasWorkHistory || query) && !result.data.professionals.length && <section className="pilot-card mt-5">
         <h2 className="font-semibold">No matching colleagues yet</h2>
         {linkSearch ? <>
-          <p className="mt-2 text-sm text-slate-600">This link didn’t match a colleague with shared work dates. You can import their experience to check the dates and create a private draft.</p>
-          <button type="button" className="pilot-button-secondary mt-3" onClick={() => openImport(query)}>Import LinkedIn profile</button>
+          <p className="mt-2 text-sm text-slate-600">If this colleague hasn’t joined, add their LinkedIn profile and share an invitation.</p>
+          <button type="button" className="pilot-button-secondary mt-3" onClick={() => openImport(query)}>Add this colleague</button>
         </> : <>
-          <p className="mt-2 text-sm text-slate-600">Colleagues appear here once they join and add overlapping work dates.</p>
+          <p className="mt-2 text-sm text-slate-600">Your results include members with overlapping work dates and shared drafts you searched for.</p>
           <Link className="pilot-link mt-2 inline-block text-sm" to="/work-history">Review your work dates</Link>
         </>}
       </section>}
       {importOpen && <section ref={importPanel} className="pilot-card mt-6 scroll-mt-5" aria-labelledby="colleague-tab-import-heading">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="colleague-tab-import-heading" className="text-lg font-semibold">Import colleague from LinkedIn</h2>
-          <button type="button" className="pilot-button-secondary" onClick={() => { setImportOpen(false); nameInput.current?.focus(); }}>Close import</button>
+          <h2 id="colleague-tab-import-heading" className="text-lg font-semibold">Add a colleague</h2>
+          <button type="button" className="pilot-button-secondary" onClick={() => { setImportOpen(false); nameInput.current?.focus(); }}>Close form</button>
         </div>
         <ColleagueDrafts key={importUrl} embedded initialUrl={importUrl} />
       </section>}
@@ -104,6 +104,7 @@ export default function ProfessionalSearchDiscovery() {
           return <li key={person.id} className="pilot-card flex flex-wrap items-center justify-between gap-3">
             <div>
               <Link className="pilot-link" to={path} state={state}>{person.name}</Link>
+              {person.draft && <p className="mt-1 text-sm text-slate-600">Shared draft</p>}
               {person.eligible && <p className="mt-1 text-sm text-slate-600">Shared work dates</p>}
             </div>
             {person.eligible && <Link className="pilot-button-secondary" to={path + "/rate"} state={state}

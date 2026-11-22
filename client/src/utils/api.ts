@@ -46,6 +46,9 @@ export function useResource<T>(path: string) {
 export interface Colleague {
   id: string;
   name: string;
+  eligible: boolean;
+  draft?: true;
+  claimedByViewer?: true;
 }
 
 export interface WorkEntry {
@@ -55,6 +58,17 @@ export interface WorkEntry {
   start: string;
   end: string | null;
   linkedinSource?: LinkedInSource | null;
+}
+
+export interface SharedColleagueDraft {
+  id: string;
+  name: string;
+  linkedinProfileUrl: string;
+  revision: number;
+  history: WorkEntry[];
+  overlappingRoleIds?: string[];
+  claim: { code: string; submitted: boolean } | null;
+  invitedBy: string | null;
 }
 
 export const categories = ["technical", "communication", "leadership", "reliability", "teamwork"] as const;

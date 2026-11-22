@@ -102,6 +102,7 @@ export class PilotOperationsService {
     const { rows } = await this.db.pool.query<PilotAccount>(
       `SELECT id, name, suspended_at AS "suspendedAt" FROM users
        WHERE role = 'participant' AND (NOT $2 OR suspended_at IS NOT NULL)
+         AND NOT EXISTS (SELECT 1 FROM colleague_profiles p WHERE p.id=users.id AND p.claimed_at IS NOT NULL)
          AND (strpos(lower(name), lower($1)) > 0 OR id::text = lower($1))
        ORDER BY name, id LIMIT $3 OFFSET $4`, [term, suspendedOnly, pageSize + 1, (page - 1) * pageSize],
     );
@@ -124,7 +125,9 @@ export class PilotOperationsService {
     await this.db.transaction(async (client) => {
       const { rows } = await client.query<{ suspended: boolean }>(
         `SELECT suspended_at IS NOT NULL AS suspended FROM users
-         WHERE id = $1 AND role = 'participant' FOR NO KEY UPDATE`, [userId],
+         WHERE id = $1 AND role = 'participant'
+           AND NOT EXISTS (SELECT 1 FROM colleague_profiles p WHERE p.id=users.id AND p.claimed_at IS NOT NULL)
+         FOR NO KEY UPDATE`, [userId],
       );
       if (!rows[0]) throw new NotFoundException("Participant account not found.");
       if (rows[0].suspended === suspend) throw new ConflictException("This account already has that access status.");
@@ -142,7 +145,9 @@ export class PilotOperationsService {
 
   async metrics() {
     const { rows } = await this.db.pool.query<PilotMetrics>(`
-      WITH participants AS (SELECT id FROM users WHERE role = 'participant' AND suspended_at IS NULL)
+      WITH participants AS (
+        SELECT id FROM users WHERE role = 'participant' AND suspended_at IS NULL AND issuer <> 'eprorate:colleague-draft'
+      )
       SELECT
         measured_from AS "signInsMeasuredFrom",
         sign_ins_started::float8 AS "signInsStarted",

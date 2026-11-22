@@ -6,6 +6,7 @@ import { PilotOperationsService } from "./operations.service";
 import { PilotService } from "./pilot.service";
 import { colleagueSearch, linkedInProfileUrl } from "./linkedin-profile";
 import { ColleagueDraftsService } from "./colleague-drafts.service";
+import { ColleagueProfilesService } from "./colleague-profiles.service";
 
 const uuid = new ParseUUIDPipe({ version: "4" });
 const uuidV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -17,6 +18,7 @@ export class PilotController {
     private readonly pilot: PilotService,
     private readonly operations: PilotOperationsService,
     private readonly drafts: ColleagueDraftsService,
+    private readonly colleagueProfiles: ColleagueProfilesService,
   ) {}
 
   @Get("dashboard")
@@ -53,6 +55,15 @@ export class PilotController {
     await this.drafts.requestInvite((await this.auth.requireUser(req)).id, id);
   }
 
+  @Post("colleague-drafts/:id/invitation-link")
+  async createDraftInvitationLink(@Req() req: Request, @Param("id", uuid) id: string, @Body("replaceId") replaceId: unknown) {
+    const owner = await this.auth.requireUser(req);
+    if (replaceId !== undefined && (typeof replaceId !== "string" || !uuidV4.test(replaceId))) {
+      throw new BadRequestException("Invalid invitation reference.");
+    }
+    return this.drafts.createInvitationLink(owner.id, id, replaceId);
+  }
+
   @Get("pilot/colleague-invitations")
   async colleagueInvitations(@Req() req: Request, @Query("page") page: unknown) {
     await this.auth.requireOperator(req);
@@ -63,6 +74,58 @@ export class PilotController {
   async issueColleagueInvite(@Req() req: Request, @Param("id", uuid) id: string) {
     const operator = await this.auth.requireOperator(req);
     return this.operations.issueInvite("participant", operator.id, id);
+  }
+
+  @Post("colleague-profiles")
+  async createColleagueProfile(@Req() req: Request, @Body() body: unknown) {
+    const { id } = await this.auth.requireUser(req);
+    return this.colleagueProfiles.create(id, colleagueDraftInput(body, true));
+  }
+
+  @Get("colleague-profiles/:id")
+  async colleagueProfile(@Req() req: Request, @Param("id", uuid) id: string) {
+    return this.colleagueProfiles.get((await this.auth.requireUser(req)).id, id);
+  }
+
+  @Put("colleague-profiles/:id")
+  @HttpCode(204)
+  async editColleagueProfile(@Req() req: Request, @Param("id", uuid) id: string, @Body() body: unknown) {
+    const member = await this.auth.requireUser(req);
+    const { revision } = object(body);
+    if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1 || revision > 2_147_483_647) {
+      throw new BadRequestException("Reload this draft before editing.");
+    }
+    await this.colleagueProfiles.edit(member.id, id, revision, colleagueDraftInput(body, true));
+  }
+
+  @Post("colleague-profiles/:id/invitations")
+  async inviteToColleagueProfile(@Req() req: Request, @Param("id", uuid) id: string) {
+    return this.colleagueProfiles.invite((await this.auth.requireUser(req)).id, id);
+  }
+
+  @Post("colleague-profiles/:id/claim")
+  async startColleagueClaim(@Req() req: Request, @Param("id", uuid) id: string) {
+    return this.colleagueProfiles.startClaim((await this.auth.requireUser(req)).id, id);
+  }
+
+  @Put("colleague-profiles/:id/claim")
+  @HttpCode(204)
+  async submitColleagueClaim(@Req() req: Request, @Param("id", uuid) id: string, @Body() body: unknown) {
+    await this.colleagueProfiles.submitClaim((await this.auth.requireUser(req)).id, id, object(body).revision);
+  }
+
+  @Get("pilot/colleague-claims")
+  async colleagueClaims(@Req() req: Request, @Query("page") page: unknown) {
+    await this.auth.requireOperator(req);
+    return this.colleagueProfiles.claims(pageNumber(page));
+  }
+
+  @Put("pilot/colleague-claims/:id")
+  @HttpCode(204)
+  async reviewColleagueClaim(@Req() req: Request, @Param("id", uuid) id: string, @Body() body: unknown) {
+    const operator = await this.auth.requireOperator(req);
+    const { code } = object(body);
+    await this.colleagueProfiles.review(operator.id, id, code === null ? null : text(code, "LinkedIn verification code", 20, 20));
   }
 
   @Get("work-history")
