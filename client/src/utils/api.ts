@@ -48,6 +48,7 @@ export interface Colleague {
   name: string;
   eligible: boolean;
   draft?: true;
+  privateDraft?: true;
   claimedByViewer?: true;
 }
 
@@ -65,6 +66,9 @@ export interface SharedColleagueDraft {
   name: string;
   linkedinProfileUrl: string;
   revision: number;
+  shared?: boolean;
+  canInvite?: boolean;
+  canClaim?: boolean;
   history: WorkEntry[];
   overlappingRoleIds?: string[];
   claim: { code: string; submitted: boolean } | null;

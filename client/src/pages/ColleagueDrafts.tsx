@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { message, send, useResource, type SharedColleagueDraft } from "../utils/api";
 import { linkedInPosition, type LinkedInPosition } from "../utils/linkedinPositions";
 import { clearBrowserImport, pendingBrowserImport } from "../utils/browserImport";
 import LinkedInTabImport, { type LinkedInTabProfile } from "../components/LinkedInTabImport";
 import SharedWorkDatesTag from "../components/SharedWorkDatesTag";
 import ColleagueInvitationLink from "../components/ColleagueInvitationLink";
+import RatePrivateDraftButton from "../components/RatePrivateDraftButton";
 
 interface Draft {
   id: string;
@@ -29,10 +30,11 @@ const statusLabels = {
 
 function DraftEditor({ id }: { id: string }) {
   const draft = useResource<SharedColleagueDraft>("/colleague-profiles/" + id);
-  if (draft.data) return <ColleagueDrafts key={id} sharedDraft={draft.data} />;
+  if (draft.data && draft.data.shared !== false) return <ColleagueDrafts key={id} sharedDraft={draft.data} />;
+  const error = draft.error ?? (draft.data ? "This colleague draft is private." : undefined);
   return <main className="pilot-main">
     <Link className="pilot-link" to={"/professionals/" + id}>Back to profile</Link>
-    <p className="mt-4" role={draft.error ? "alert" : "status"}>{draft.error ?? "Loading draft…"}</p>
+    <p className="mt-4" role={error ? "alert" : "status"}>{error ?? "Loading draft…"}</p>
   </main>;
 }
 
@@ -47,6 +49,7 @@ function ColleagueDrafts({ embedded = false, initialUrl = "", sharedDraft }: {
   embedded?: boolean; initialUrl?: string; sharedDraft?: SharedColleagueDraft;
 }) {
   const [params, setParams] = useSearchParams();
+  const { hash } = useLocation();
   const navigate = useNavigate();
   const [url, setUrl] = useState(sharedDraft?.linkedinProfileUrl || initialUrl || params.get("link") || "");
   const [name, setName] = useState(sharedDraft?.name ?? "");
@@ -63,6 +66,12 @@ function ColleagueDrafts({ embedded = false, initialUrl = "", sharedDraft }: {
   const importToken = embedded || sharedDraft ? "" : params.get("import") ?? "";
   const drafts = useResource<Draft[]>("/colleague-drafts");
   const today = new Date().toISOString().slice(0, 10);
+
+  useEffect(() => {
+    if (!embedded && drafts.data && hash.startsWith("#draft-")) {
+      document.getElementById(hash.slice(1))?.scrollIntoView();
+    }
+  }, [drafts.data, embedded, hash]);
 
   useEffect(() => {
     if (!importToken) return;
@@ -307,10 +316,13 @@ function ColleagueDrafts({ embedded = false, initialUrl = "", sharedDraft }: {
       {!drafts.data && !drafts.error && <p className="mt-3" role="status">Loading drafts…</p>}
       {drafts.data?.length === 0 && <p className="mt-3 text-slate-600">You have no saved colleague drafts.</p>}
       <ul className="mt-3 space-y-4">
-        {drafts.data?.map(draft => <li key={draft.id} className="pilot-card">
+        {drafts.data?.map(draft => <li id={"draft-" + draft.id} key={draft.id} className="pilot-card scroll-mt-5">
           <h3 className="text-lg font-semibold">{draft.name}</h3>
           <a className="pilot-link mt-1 inline-block break-all text-sm" href={draft.linkedinProfileUrl} rel="noreferrer" target="_blank">Open LinkedIn profile</a>
           <p className="mt-2 text-sm text-slate-600">{statusLabels[draft.invitationStatus]}</p>
+          {!!draft.overlappingRoleIndexes?.length && <div className="mt-4">
+            <RatePrivateDraftButton id={draft.id} name={draft.name} />
+          </div>}
           {draft.invitationStatus !== "redeemed" && <section className="mt-4 rounded-lg bg-primary-50 p-4">
             <ColleagueInvitationLink endpoint={"/colleague-drafts/" + draft.id + "/invitation-link"}
               profile={draft.linkedinProfileUrl} replaceId={draft.invitationStatus === "issued" ? draft.invitationId : null}

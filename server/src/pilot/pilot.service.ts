@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import type { Pool, PoolClient } from "pg";
 import { Database } from "../database/database";
-import { overlapStart, overlapEnd } from "./eligibility";
+import { draftWorkEntries, overlapsDraftWork, overlapsPrivateDraft, ownsPrivateDraft, redeemedDraftInvite, overlapStart, overlapEnd } from "./eligibility";
 import { cleanCompany } from "./companies";
 import { linkedInSourceInput, ratingInput, workImportInput, workInput } from "./inputs";
 
@@ -15,7 +15,7 @@ function compareCompanies(first: string, second: string) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 const ratingFields = `r.id, r.overall, r.categories, r.feedback, r.anonymous, r.hidden, r.updated_at AS "updatedAt"`;
-const sharedWork = (author: string, colleague: string) => `EXISTS (
+export const sharedWork = (author: string, colleague: string) => `EXISTS (
   SELECT 1 FROM work_history a JOIN work_history r ON a.company_id = r.company_id
   WHERE a.user_id = ${author} AND r.user_id = ${colleague} AND ${overlapStart} <= ${overlapEnd}
 )`;
@@ -162,7 +162,8 @@ export class PilotService {
       if (url) {
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [url]);
         const protectedLink = await client.query(
-          "SELECT 1 FROM colleague_profiles WHERE linkedin_profile_url=$1 AND claimed_by IS DISTINCT FROM $2", [url, userId],
+          `SELECT 1 FROM colleague_profiles WHERE linkedin_profile_url=$1
+           AND (shared OR claimed_at IS NOT NULL) AND claimed_by IS DISTINCT FROM $2`, [url, userId],
         );
         if (protectedLink.rowCount) throw new ConflictException("This profile has a shared draft or belongs to another member. Open it from Find colleagues.");
       }
@@ -174,7 +175,7 @@ export class PilotService {
   async search(userId: string, term: string, page: number, profileUrl: string | null = null) {
     const pageSize = 50;
     const { rows } = await this.db.pool.query<{
-      professionals: Array<{ id: string; name: string; eligible: boolean; draft?: true }>;
+      professionals: Array<{ id: string; name: string; eligible: boolean; draft?: true; privateDraft?: true }>;
       hasWorkHistory: boolean;
     }>(
       `WITH work_matches AS (
@@ -184,23 +185,38 @@ export class PilotService {
          WHERE a.user_id = $1 AND u.id <> $1 AND u.suspended_at IS NULL
            AND ${overlapStart} <= ${overlapEnd}
        ), matched_people AS (
-         SELECT u.id, u.name, true AS eligible, CASE WHEN d.id IS NOT NULL THEN true END AS draft
+         SELECT u.id, u.name, true AS eligible, CASE WHEN d.id IS NOT NULL THEN true END AS draft,
+           coalesce($5::text,d.linkedin_profile_url,u.linkedin_profile_url) AS url
          FROM work_matches w JOIN users u ON u.id=w.id
          LEFT JOIN colleague_profiles d ON d.id=u.id
-         WHERE d.claimed_at IS NULL
+         WHERE d.claimed_at IS NULL AND (d.id IS NULL OR d.shared)
            AND CASE WHEN $5::text IS NOT NULL THEN
              coalesce(d.linkedin_profile_url, u.linkedin_profile_url) = $5
              OR EXISTS (SELECT 1 FROM colleague_profiles p WHERE p.claimed_by=u.id AND p.linkedin_profile_url=$5)
            ELSE strpos(lower(u.name), lower($2)) > 0 END
          UNION ALL
-         SELECT u.id, u.name, false AS eligible, true AS draft
-         FROM colleague_profiles d JOIN users u ON u.id=d.id
-         WHERE d.claimed_at IS NULL AND u.suspended_at IS NULL
-           AND NOT EXISTS (SELECT 1 FROM work_matches w WHERE w.id=d.id)
-           AND CASE WHEN $5::text IS NOT NULL THEN d.linkedin_profile_url=$5
+         SELECT u.id, u.name, ${overlapsPrivateDraft("$1", "u.id")} AS eligible, true AS draft, p.linkedin_profile_url AS url
+         FROM colleague_profiles p JOIN users u ON u.id=p.id
+         WHERE p.claimed_at IS NULL AND u.suspended_at IS NULL AND p.shared
+           AND NOT EXISTS (SELECT 1 FROM work_matches w WHERE w.id=p.id)
+           AND CASE WHEN $5::text IS NOT NULL THEN p.linkedin_profile_url=$5
                     ELSE $2 <> '' AND strpos(lower(u.name), lower($2)) > 0 END
        ), matches AS (
-         SELECT * FROM matched_people ORDER BY name, id LIMIT $3 OFFSET $4
+         SELECT id, name, eligible, draft, NULL::boolean AS "privateDraft" FROM matched_people
+         UNION ALL
+         SELECT d.id, d.name, matched.eligible, NULL::boolean AS draft, true AS "privateDraft"
+         FROM colleague_drafts d
+         CROSS JOIN LATERAL (SELECT ${overlapsDraftWork("$1", "d.history")} AS eligible) matched
+         WHERE d.owner_id=$1
+           AND NOT EXISTS (
+             SELECT 1 FROM matched_people m
+             WHERE m.url=d.linkedin_profile_url OR EXISTS (
+               SELECT 1 FROM colleague_profiles p WHERE p.claimed_by=m.id AND p.linkedin_profile_url=d.linkedin_profile_url
+             )
+           )
+           AND CASE WHEN $5::text IS NOT NULL THEN d.linkedin_profile_url=$5
+             WHEN $2='' THEN matched.eligible ELSE strpos(lower(d.name), lower($2))>0 END
+         ORDER BY name, id LIMIT $3 OFFSET $4
        )
        SELECT coalesce((SELECT jsonb_agg(jsonb_strip_nulls(to_jsonb(p)) ORDER BY p.name, p.id) FROM matches p), '[]'::jsonb) AS professionals,
          EXISTS (SELECT 1 FROM work_history WHERE user_id = $1) AS "hasWorkHistory"`,
@@ -213,20 +229,24 @@ export class PilotService {
   async profile(userId: string, recipientId: string) {
     const result = await this.db.pool.query(
       `WITH target AS (
-         SELECT u.id, u.name, d.id IS NOT NULL AND d.claimed_at IS NULL AS draft,
-           coalesce(d.claimed_by=$2,false) AS claimedByViewer,
-           u.id <> $2 AND ${sharedWork("$2", "u.id")} AS eligible
-         FROM users u LEFT JOIN colleague_profiles d ON d.id=$1
-         WHERE u.id=coalesce(d.claimed_by, $1) AND u.suspended_at IS NULL
+         SELECT u.id, coalesce(own.name,u.name) AS name,
+           p.claimed_at IS NULL AND (p.shared OR own.id IS NOT NULL OR ${redeemedDraftInvite("$2")}) AS draft,
+           p.shared=false AS privateDraft,
+           coalesce(p.claimed_by=$2,false) AS claimedByViewer,
+           u.id <> $2 AND (${sharedWork("$2", "u.id")} OR ${overlapsPrivateDraft("$2", "u.id")}) AS eligible
+         FROM users u LEFT JOIN colleague_profiles p ON p.id=$1
+         LEFT JOIN colleague_drafts own ON own.owner_id=$2 AND own.linkedin_profile_url=p.linkedin_profile_url
+           AND p.claimed_at IS NULL AND p.shared=false
+         WHERE u.id=coalesce(p.claimed_by, $1) AND u.suspended_at IS NULL
        )
-       SELECT id, name, eligible, draft, claimedByViewer AS "claimedByViewer"
+       SELECT id, name, eligible, draft, privateDraft AS "privateDraft", claimedByViewer AS "claimedByViewer"
        FROM target WHERE draft OR eligible OR claimedByViewer`,
       [recipientId, userId],
     );
     const recipient = result.rows[0];
     if (!recipient) throw new NotFoundException("Colleague not found.");
-    const { draft, claimedByViewer, ...person } = recipient;
-    return { ...person, ...(draft ? { draft } : {}), ...(claimedByViewer ? { claimedByViewer } : {}) };
+    const { draft, privateDraft, claimedByViewer, ...person } = recipient;
+    return { ...person, ...(draft ? { draft } : {}), ...(privateDraft ? { privateDraft } : {}), ...(claimedByViewer ? { claimedByViewer } : {}) };
   }
 
   private async overlap(client: Pool | PoolClient, author: string, recipient: string) {
@@ -241,6 +261,19 @@ export class PilotService {
        ORDER BY ${overlapStart}, a.id, r.id LIMIT 1`, [author, recipient],
     );
     return rows[0];
+  }
+
+  private async privateDraftOverlap(client: PoolClient, author: string, recipient: string) {
+    const { rows: [match] } = await client.query(
+      `SELECT c.id AS "companyId", c.name AS company, (${overlapStart})::text AS start, (${overlapEnd})::text AS end
+       FROM colleague_profiles p JOIN colleague_drafts d ON d.linkedin_profile_url=p.linkedin_profile_url
+       CROSS JOIN LATERAL (${draftWorkEntries("d.history")}) r
+       JOIN work_history a ON a.user_id=d.owner_id AND a.company_id=r.company_id
+       JOIN companies c ON c.id=r.company_id
+       WHERE p.id=$2 AND p.claimed_at IS NULL AND d.owner_id=$1 AND ${overlapStart} <= ${overlapEnd}
+       ORDER BY ${overlapStart}, a.id, r.position LIMIT 1`, [author, recipient],
+    );
+    return match;
   }
 
   async given(userId: string, recipientId: string) {
@@ -267,11 +300,19 @@ export class PilotService {
       if (!target) {
         throw new NotFoundException("Colleague not found.");
       }
+      if (target.draft) {
+        const access = await client.query(
+          `SELECT 1 FROM colleague_profiles p WHERE p.id=$2 AND (p.shared OR ${ownsPrivateDraft("$1")})`,
+          [author, recipient],
+        );
+        if (!access.rowCount) throw new NotFoundException("Colleague not found.");
+      }
       const settings = await client.query<{ submissions_paused: boolean }>(
         "SELECT submissions_paused FROM pilot_settings WHERE id FOR SHARE",
       );
       if (settings.rows[0].submissions_paused) throw new ConflictException("Rating submissions are paused.");
-      const evidence = await this.overlap(client, author, recipient);
+      const officialOverlap = await this.overlap(client, author, recipient);
+      const evidence = officialOverlap ?? (target.draft ? await this.privateDraftOverlap(client, author, recipient) : null);
       if (!evidence) throw new ForbiddenException("Your work dates must overlap at the same company.");
 
       const before = await client.query<{ id: string; hidden: boolean }>(
@@ -290,7 +331,7 @@ export class PilotService {
              anonymous = EXCLUDED.anonymous, eligibility = EXCLUDED.eligibility, updated_at = now()
          RETURNING id`,
         [author, recipient, rating.overall, rating.categories, rating.feedback, rating.anonymous,
-          { ...evidence, version: 1, ...(target.draft ? { fromSharedDraft: true } : {}) }],
+          { ...evidence, version: 1, ...(target.draft ? officialOverlap ? { fromSharedDraft: true } : { fromPrivateDraft: true } : {}) }],
       );
       return result.rows[0];
     });
@@ -299,9 +340,12 @@ export class PilotService {
   async ratings(userId: string) {
     const [given, received] = await Promise.all([
       this.db.pool.query(
-        `SELECT ${ratingFields}, u.name, u.id AS "personId",
-           (u.suspended_at IS NULL AND ${sharedWork("$1", "u.id")}) AS "canOpenProfile"
-         FROM ratings r JOIN users u ON u.id = r.recipient_id WHERE r.author_id = $1
+        `SELECT ${ratingFields}, coalesce(d.name,u.name) AS name, u.id AS "personId",
+           (u.suspended_at IS NULL AND (${sharedWork("$1", "u.id")} OR ${overlapsPrivateDraft("$1", "u.id")})) AS "canOpenProfile"
+         FROM ratings r JOIN users u ON u.id=r.recipient_id
+         LEFT JOIN colleague_profiles p ON p.id=u.id AND p.shared=false
+         LEFT JOIN colleague_drafts d ON d.owner_id=$1 AND d.linkedin_profile_url=p.linkedin_profile_url
+         WHERE r.author_id = $1
          ORDER BY r.updated_at DESC`, [userId],
       ),
       this.db.pool.query(

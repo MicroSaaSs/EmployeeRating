@@ -64,6 +64,12 @@ export class PilotController {
     return this.drafts.createInvitationLink(owner.id, id, replaceId);
   }
 
+  @Post("colleague-drafts/:id/rating-target")
+  async preparePrivateRating(@Req() req: Request, @Param("id", uuid) id: string) {
+    const member = await this.auth.requireUser(req);
+    return this.colleagueProfiles.preparePrivateRating(member.id, id);
+  }
+
   @Get("pilot/colleague-invitations")
   async colleagueInvitations(@Req() req: Request, @Query("page") page: unknown) {
     await this.auth.requireOperator(req);

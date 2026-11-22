@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useResource, type Colleague } from "../../utils/api";
 import ColleagueDrafts from "../ColleagueDrafts";
+import RatePrivateDraftButton from "../../components/RatePrivateDraftButton";
 import { linkedInTabUrl } from "../../utils/linkedinTabCapture";
 
 type Directory = {
@@ -47,7 +48,7 @@ export default function ProfessionalSearchDiscovery() {
   return (
     <main className="pilot-main">
       <h1 className="pilot-title">Find colleagues</h1>
-      <p className="mt-2 text-slate-600">Find colleagues you worked with, or look up a shared draft for someone who hasn’t joined yet.</p>
+      <p className="mt-2 text-slate-600">Find colleagues you worked with, including people you’ve saved in a draft.</p>
       <div className="mt-3 flex flex-wrap items-center gap-4">
         <button type="button" className="pilot-button-secondary" onClick={() => openImport(name)}>Add a colleague</button>
         <Link to="/colleague-drafts#saved-drafts-heading" className="pilot-link text-sm">Previously saved drafts</Link>
@@ -77,7 +78,7 @@ export default function ProfessionalSearchDiscovery() {
         </div>
         <button className="pilot-button">Search</button>
       </form>
-      <p id="colleague-search-help" className="mt-2 text-sm text-slate-600">Search members with overlapping work dates and shared drafts by name or LinkedIn profile link.</p>
+      <p id="colleague-search-help" className="mt-2 text-sm text-slate-600">Results include your private drafts, shared drafts, and members with overlapping work dates.</p>
       {result.error && <p role="alert" className="mt-5 text-red-800">{result.error}</p>}
       {!result.data && !result.error && <p role="status" className="mt-5">Loading colleagues…</p>}
       {result.data && (result.data.hasWorkHistory || query) && !result.data.professionals.length && <section className="pilot-card mt-5">
@@ -99,16 +100,19 @@ export default function ProfessionalSearchDiscovery() {
       </section>}
       <ul className="mt-6 grid gap-3 sm:grid-cols-2">
         {result.data?.professionals.map((person) => {
-          const path = "/professionals/" + person.id;
+          const path = person.privateDraft ? "/colleague-drafts#draft-" + person.id : "/professionals/" + person.id;
           const state = { directorySearch: params.toString() };
           return <li key={person.id} className="pilot-card flex flex-wrap items-center justify-between gap-3">
             <div>
               <Link className="pilot-link" to={path} state={state}>{person.name}</Link>
               {person.draft && <p className="mt-1 text-sm text-slate-600">Shared draft</p>}
+              {person.privateDraft && <p className="mt-1 text-sm text-slate-600">Your private draft</p>}
               {person.eligible && <p className="mt-1 text-sm text-slate-600">Shared work dates</p>}
             </div>
-            {person.eligible && <Link className="pilot-button-secondary" to={path + "/rate"} state={state}
-              aria-label={"Rate " + person.name}>Rate</Link>}
+            {person.eligible && (person.privateDraft
+              ? <RatePrivateDraftButton id={person.id} name={person.name} directorySearch={state.directorySearch} />
+              : <Link className="pilot-button-secondary" to={path + "/rate"} state={state}
+                aria-label={"Rate " + person.name}>Rate</Link>)}
           </li>;
         })}
       </ul>

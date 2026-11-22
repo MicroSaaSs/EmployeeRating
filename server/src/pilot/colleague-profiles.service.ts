@@ -1,12 +1,12 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { digest, newToken } from "../auth/auth.service";
 import { clientOrigin } from "../config";
 import { Database } from "../database/database";
 import type { colleagueDraftInput } from "./inputs";
-import { PilotService, workQuery } from "./pilot.service";
-import { overlapsWorkEntry } from "./eligibility";
+import { PilotService, sharedWork, workQuery } from "./pilot.service";
+import { overlapsDraftWork, overlapsWorkEntry, ownsPrivateDraft, redeemedDraftInvite } from "./eligibility";
 
 const draftIssuer = "eprorate:colleague-draft";
 type ProfileInput = ReturnType<typeof colleagueDraftInput>;
@@ -17,7 +17,9 @@ export class ColleagueProfilesService {
 
   async get(member: string, id: string) {
     const { rows: [profile] } = await this.db.pool.query(
-      `SELECT p.id, u.name, p.linkedin_profile_url AS "linkedinProfileUrl", p.revision,
+      `SELECT p.id, coalesce(own.name,u.name) AS name, p.linkedin_profile_url AS "linkedinProfileUrl", p.revision,
+        p.shared, (p.shared OR own.id IS NOT NULL) AS "canInvite",
+        (p.shared OR ${redeemedDraftInvite("$2")}) AS "canClaim",
         coalesce((SELECT jsonb_agg(w) FROM (${workQuery}) w), '[]'::jsonb) AS history,
         ARRAY(SELECT r.id FROM work_history r WHERE r.user_id=p.id AND ${overlapsWorkEntry("$2")}) AS "overlappingRoleIds",
         (SELECT jsonb_build_object('code', c.code, 'submitted', coalesce(c.submitted_revision=p.revision, false))
@@ -27,9 +29,11 @@ export class ColleagueProfilesService {
          WHERE i.colleague_profile_id=p.id AND i.redeemed_by=$2
          ORDER BY i.redeemed_at DESC LIMIT 1) AS "invitedBy"
        FROM colleague_profiles p JOIN users u ON u.id=p.id
-       WHERE p.id=$1 AND p.claimed_at IS NULL AND u.suspended_at IS NULL`, [id, member],
+       LEFT JOIN colleague_drafts own ON own.owner_id=$2 AND own.linkedin_profile_url=p.linkedin_profile_url AND NOT p.shared
+       WHERE p.id=$1 AND p.claimed_at IS NULL AND u.suspended_at IS NULL
+         AND (p.shared OR own.id IS NOT NULL OR ${redeemedDraftInvite("$2")})`, [id, member],
     );
-    if (!profile) throw new NotFoundException("This shared draft is no longer available.");
+    if (!profile) throw new NotFoundException("This colleague draft is no longer available.");
     return profile;
   }
 
@@ -40,11 +44,70 @@ export class ColleagueProfilesService {
     );
     if (member && !accounts.some(account => account.id === member)) throw new UnauthorizedException("Sign in to continue.");
     if (!accounts.some(account => account.id === id)) throw new NotFoundException("This shared draft is no longer available.");
-    const { rows: [draft] } = await client.query<{ linkedin_profile_url: string; revision: number }>(
-      "SELECT linkedin_profile_url, revision FROM colleague_profiles WHERE id=$1 AND claimed_at IS NULL", [id],
+    const { rows: [draft] } = await client.query<{
+      linkedin_profile_url: string; revision: number; shared: boolean; owns: boolean; invited: boolean;
+    }>(
+      `SELECT linkedin_profile_url, revision, shared, ${ownsPrivateDraft("$2")} AS owns, ${redeemedDraftInvite("$2")} AS invited
+       FROM colleague_profiles p WHERE id=$1 AND claimed_at IS NULL`, [id, member ?? null],
     );
     if (!draft) throw new NotFoundException("This shared draft is no longer available.");
     return draft;
+  }
+
+  private async insertProfile(client: PoolClient, member: string, url: string, name: string, shared: boolean) {
+    const { rows: [account] } = await client.query<{ id: string }>(
+      "INSERT INTO users (issuer, subject, name) VALUES ($1,$2,$3) RETURNING id", [draftIssuer, url, name],
+    );
+    await client.query(
+      "INSERT INTO colleague_profiles (id, linkedin_profile_url, created_by, shared) VALUES ($1,$2,$3,$4)",
+      [account.id, url, member, shared],
+    );
+    return account.id;
+  }
+
+  async preparePrivateRating(member: string, draftId: string) {
+    await this.db.limit("private-draft-rating:" + member, 40);
+    return this.db.transaction(async client => {
+      await client.query("SELECT pg_advisory_xact_lock_shared(114010, 2)");
+      const { rows: [initial] } = await client.query<{ linkedin_profile_url: string }>(
+        "SELECT linkedin_profile_url FROM colleague_drafts WHERE id=$1 AND owner_id=$2", [draftId, member],
+      );
+      if (!initial) throw new NotFoundException("Colleague draft not found.");
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [initial.linkedin_profile_url]);
+      const account = await client.query("SELECT id FROM users WHERE id=$1 AND suspended_at IS NULL FOR NO KEY UPDATE", [member]);
+      if (!account.rowCount) throw new UnauthorizedException("Sign in to continue.");
+      const { rows: [draft] } = await client.query<{
+        linkedin_profile_url: string; name: string; invitation_id: string | null; eligible: boolean;
+      }>(
+        `SELECT d.linkedin_profile_url, d.name, d.invitation_id, ${overlapsDraftWork("$2", "d.history")} AS eligible
+         FROM colleague_drafts d WHERE d.id=$1 AND d.owner_id=$2 FOR UPDATE`, [draftId, member],
+      );
+      if (!draft) throw new NotFoundException("Colleague draft not found.");
+      const url = draft.linkedin_profile_url;
+      const { rows: [existing] } = await client.query<{
+        id: string; claimed_by: string | null; claimed_at: Date | null; suspended_at: Date | null;
+      }>(
+        `SELECT p.id,p.claimed_by,p.claimed_at,u.suspended_at FROM colleague_profiles p
+         JOIN users u ON u.id=p.id WHERE p.linkedin_profile_url=$1`, [url],
+      );
+      const { rows: [registered] } = await client.query<{ id: string; eligible: boolean }>(
+        `SELECT u.id, u.id<>$1 AND u.suspended_at IS NULL AND ${sharedWork("$1", "u.id")} AS eligible
+         FROM users u WHERE CASE WHEN $3::uuid IS NOT NULL THEN u.id=$3 ELSE u.linkedin_profile_url=$2 END
+         ORDER BY eligible DESC,u.id LIMIT 1`, [member, url, existing?.claimed_by ?? null],
+      );
+      if (registered?.eligible) return { id: registered.id };
+      if (registered || existing?.suspended_at || existing?.claimed_at) {
+        throw new ForbiddenException("Ratings require overlapping saved work dates with an available colleague.");
+      }
+      if (!draft.eligible) throw new ForbiddenException("Your work dates must overlap at the same company.");
+      const id = existing?.id ?? await this.insertProfile(client, member, url, draft.name, false);
+      if (draft.invitation_id) {
+        await client.query(
+          "UPDATE invites SET colleague_profile_id=$2 WHERE id=$1 AND colleague_profile_id IS NULL", [draft.invitation_id, id],
+        );
+      }
+      return { id };
+    });
   }
 
   async create(member: string, input: ProfileInput) {
@@ -53,27 +116,28 @@ export class ColleagueProfilesService {
       await client.query("SELECT pg_advisory_xact_lock_shared(114010, 2)");
       // A single creation per normalized URL, including simultaneous imports.
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))", [input.linkedinProfileUrl]);
-      const creator = await client.query("SELECT id FROM users WHERE id=$1 AND suspended_at IS NULL FOR NO KEY UPDATE", [member]);
-      if (!creator.rowCount) throw new UnauthorizedException("Sign in to continue.");
-      const { rows: [existing] } = await client.query<{ id: string; available: boolean }>(
-        `SELECT p.id, (p.claimed_at IS NULL AND u.suspended_at IS NULL) AS available
+      const { rows: [existing] } = await client.query<{ id: string; available: boolean; shared: boolean }>(
+        `SELECT p.id, (p.claimed_at IS NULL AND u.suspended_at IS NULL) AS available, p.shared
          FROM colleague_profiles p JOIN users u ON u.id=p.id WHERE p.linkedin_profile_url=$1`,
         [input.linkedinProfileUrl],
       );
-      if (existing?.available) return { id: existing.id, created: false };
-      if (existing) throw new ConflictException("This LinkedIn profile already belongs to a member or is unavailable.");
+      if (existing && !existing.available) throw new ConflictException("This LinkedIn profile already belongs to a member or is unavailable.");
+      if (existing?.shared) return { id: existing.id, created: false };
       const linked = await client.query("SELECT 1 FROM users WHERE linkedin_profile_url=$1", [input.linkedinProfileUrl]);
       if (linked.rowCount) throw new ConflictException("This LinkedIn profile is already linked to a member account.");
-      const { rows: [account] } = await client.query<{ id: string }>(
-        "INSERT INTO users (issuer, subject, name) VALUES ($1,$2,$3) RETURNING id",
-        [draftIssuer, input.linkedinProfileUrl, input.name],
-      );
-      await client.query(
-        "INSERT INTO colleague_profiles (id, linkedin_profile_url, created_by) VALUES ($1,$2,$3)",
-        [account.id, input.linkedinProfileUrl, member],
-      );
-      await this.pilot.replaceDraftWork(client, account.id, input.history);
-      return { id: account.id, created: true };
+      let id: string;
+      if (existing) {
+        await this.lockDraft(client, existing.id, member);
+        id = existing.id;
+        await client.query("UPDATE colleague_profiles SET shared=true, revision=revision+1 WHERE id=$1", [id]);
+        await client.query("UPDATE users SET name=$2 WHERE id=$1", [id, input.name]);
+      } else {
+        const creator = await client.query("SELECT id FROM users WHERE id=$1 AND suspended_at IS NULL FOR NO KEY UPDATE", [member]);
+        if (!creator.rowCount) throw new UnauthorizedException("Sign in to continue.");
+        id = await this.insertProfile(client, member, input.linkedinProfileUrl, input.name, true);
+      }
+      await this.pilot.replaceDraftWork(client, id, input.history);
+      return { id, created: true };
     });
   }
 
@@ -82,6 +146,7 @@ export class ColleagueProfilesService {
     await this.db.transaction(async client => {
       await client.query("SELECT pg_advisory_xact_lock_shared(114010, 2)");
       const draft = await this.lockDraft(client, id, member);
+      if (!draft.shared) throw new NotFoundException("Shared colleague draft not found.");
       if (draft.linkedin_profile_url !== input.linkedinProfileUrl) throw new BadRequestException("The LinkedIn profile link is fixed for this draft.");
       const updated = await client.query("UPDATE colleague_profiles SET revision=revision+1 WHERE id=$1 AND revision=$2", [id, revision]);
       if (!updated.rowCount) throw new ConflictException("Someone edited this draft. Reload it to review the latest version.");
@@ -95,7 +160,8 @@ export class ColleagueProfilesService {
     const token = newToken();
     const url = clientOrigin() + "/#invite=" + token;
     return this.db.transaction(async client => {
-      await this.lockDraft(client, id, member);
+      const draft = await this.lockDraft(client, id, member);
+      if (!draft.shared && !draft.owns) throw new NotFoundException("Colleague draft not found.");
       const { rows: [invitation] } = await client.query<{ expiresAt: Date }>(
         `INSERT INTO invites (digest, role, expires_at, colleague_profile_id, invited_by)
          VALUES ($1,'participant',now() + interval '7 days',$2,$3) RETURNING expires_at AS "expiresAt"`,
@@ -109,7 +175,8 @@ export class ColleagueProfilesService {
   async startClaim(member: string, profile: string) {
     await this.db.limit("colleague-claim:" + member, 15);
     return this.db.transaction(async client => {
-      await this.lockDraft(client, profile, member);
+      const draft = await this.lockDraft(client, profile, member);
+      if (!draft.shared && !draft.invited) throw new NotFoundException("Colleague draft not found.");
       const { rows: [claim] } = await client.query<{ code: string; submitted: boolean }>(
         `INSERT INTO colleague_profile_claims (profile_id, claimant_id, code, expires_at)
          VALUES ($1,$2,$3,now() + interval '7 days')
@@ -133,6 +200,7 @@ export class ColleagueProfilesService {
     await this.db.limit("colleague-claim:" + member, 15);
     await this.db.transaction(async client => {
       const draft = await this.lockDraft(client, id, member);
+      if (!draft.shared && !draft.invited) throw new NotFoundException("Colleague draft not found.");
       if (draft.revision !== revision) throw new ConflictException("The work history changed. Reload the draft and review it before submitting.");
       const result = await client.query(
         `UPDATE colleague_profile_claims

@@ -4,7 +4,7 @@ import { clientOrigin } from "../config";
 import { Database } from "../database/database";
 import type { colleagueDraftInput } from "./inputs";
 import { cleanCompany } from "./companies";
-import { overlapsWorkEntry } from "./eligibility";
+import { draftWorkEntries, overlapsWorkEntry } from "./eligibility";
 
 const invitationStatus = `CASE WHEN i.id IS NULL THEN 'requested'
   WHEN i.revoked_at IS NOT NULL THEN 'revoked'
@@ -20,13 +20,7 @@ export class ColleagueDraftsService {
       `SELECT d.id, d.name, d.linkedin_profile_url AS "linkedinProfileUrl", d.history,
         ARRAY(
           SELECT (r.position - 1)::integer
-          FROM (
-            SELECT role.position, (role.entry->>'start')::date AS start_date, (role.entry->>'end')::date AS end_date,
-              coalesce(alias.company_id, c.id) AS company_id
-            FROM jsonb_array_elements(d.history) WITH ORDINALITY role(entry, position)
-            LEFT JOIN company_aliases alias ON alias.name_key=lower(role.entry->>'company')
-            LEFT JOIN companies c ON alias.company_id IS NULL AND c.name_key=lower(role.entry->>'company')
-          ) r
+          FROM (${draftWorkEntries("d.history")}) r
           WHERE ${overlapsWorkEntry("$1")}
           ORDER BY r.position
         ) AS "overlappingRoleIndexes",
@@ -109,8 +103,8 @@ export class ColleagueDraftsService {
     return this.db.transaction(async client => {
       const owner = await client.query("SELECT id FROM users WHERE id=$1 AND suspended_at IS NULL FOR NO KEY UPDATE", [ownerId]);
       if (!owner.rowCount) throw new UnauthorizedException("Sign in to continue.");
-      const { rows: [draft] } = await client.query<{ invitation_id: string | null }>(
-        "SELECT invitation_id FROM colleague_drafts WHERE id=$1 AND owner_id=$2 FOR UPDATE", [id, ownerId],
+      const { rows: [draft] } = await client.query<{ invitation_id: string | null; linkedin_profile_url: string }>(
+        "SELECT invitation_id, linkedin_profile_url FROM colleague_drafts WHERE id=$1 AND owner_id=$2 FOR UPDATE", [id, ownerId],
       );
       if (!draft) throw new NotFoundException("Colleague draft not found.");
       if (draft.invitation_id) {
@@ -127,9 +121,11 @@ export class ColleagueDraftsService {
         );
       }
       const { rows: [invitation] } = await client.query<{ id: string; expiresAt: Date }>(
-        `INSERT INTO invites (digest, role, expires_at, invited_by)
-         VALUES ($1,'participant',now() + interval '7 days',$2) RETURNING id, expires_at AS "expiresAt"`,
-        [digest(token), ownerId],
+        `INSERT INTO invites (digest, role, expires_at, invited_by, colleague_profile_id)
+         VALUES ($1,'participant',now() + interval '7 days',$2,
+           (SELECT id FROM colleague_profiles WHERE linkedin_profile_url=$3 AND claimed_at IS NULL))
+         RETURNING id, expires_at AS "expiresAt"`,
+        [digest(token), ownerId, draft.linkedin_profile_url],
       );
       await client.query(
         "UPDATE colleague_drafts SET invitation_id=$2, invitation_requested_at=NULL WHERE id=$1",

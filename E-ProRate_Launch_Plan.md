@@ -115,6 +115,7 @@ Colleague search accepts names and self-reported LinkedIn profile links. Active 
 - [x] Require proof of control over the linked LinkedIn profile before transferring draft work and ratings. The claimant reviews the draft and an administrator checks the code on LinkedIn. Only the owner can edit the transferred work history.
 - [x] Keep previously private drafts private until their creators choose to share them.
 - [x] Create and copy a single-use invitation link directly from private drafts, including older pending requests.
+- [x] Include private drafts in their owner's colleague search and let the owner rate them when saved work dates overlap.
 
 Shared-date checks use the participant's saved work history and company aliases. A local browser-extension prototype exists, but it is deferred: the product must work without users installing extensions.
 

@@ -102,7 +102,7 @@ export class PilotOperationsService {
     const { rows } = await this.db.pool.query<PilotAccount>(
       `SELECT id, name, suspended_at AS "suspendedAt" FROM users
        WHERE role = 'participant' AND (NOT $2 OR suspended_at IS NOT NULL)
-         AND NOT EXISTS (SELECT 1 FROM colleague_profiles p WHERE p.id=users.id AND p.claimed_at IS NOT NULL)
+         AND NOT EXISTS (SELECT 1 FROM colleague_profiles p WHERE p.id=users.id AND (NOT p.shared OR p.claimed_at IS NOT NULL))
          AND (strpos(lower(name), lower($1)) > 0 OR id::text = lower($1))
        ORDER BY name, id LIMIT $3 OFFSET $4`, [term, suspendedOnly, pageSize + 1, (page - 1) * pageSize],
     );
@@ -126,7 +126,7 @@ export class PilotOperationsService {
       const { rows } = await client.query<{ suspended: boolean }>(
         `SELECT suspended_at IS NOT NULL AS suspended FROM users
          WHERE id = $1 AND role = 'participant'
-           AND NOT EXISTS (SELECT 1 FROM colleague_profiles p WHERE p.id=users.id AND p.claimed_at IS NOT NULL)
+           AND NOT EXISTS (SELECT 1 FROM colleague_profiles p WHERE p.id=users.id AND (NOT p.shared OR p.claimed_at IS NOT NULL))
          FOR NO KEY UPDATE`, [userId],
       );
       if (!rows[0]) throw new NotFoundException("Participant account not found.");
