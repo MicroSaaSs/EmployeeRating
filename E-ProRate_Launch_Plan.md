@@ -107,7 +107,14 @@ Colleague search accepts names and self-reported LinkedIn profile links. Active 
 - [x] Remove the directory visibility switch. Discoverability and rating eligibility come from the same-company date overlap and active account status.
 - [x] Show **Anonymous** and **Show my name to this colleague** as two choices when writing a rating.
 
-For colleagues outside the pilot, participants can import a saved LinkedIn PDF into a private draft and request an invitation. Operators review requests under **Administration → Requests** and prepare a single-use participant link. A draft's work history is private to its owner. The colleague completes the existing sign-in and onboarding flow after receiving an invitation.
+### Shared colleague drafts and ownership — 22 November 2026
+
+- [x] Let signed-in members add, search, review, and edit one shared draft per LinkedIn profile link.
+- [x] Let each member create their own invitation link for the same draft. The recipient signs in through LinkedIn.
+- [x] Accept private ratings for draft colleagues with overlapping dates. Deliver those ratings after the colleague verifies ownership.
+- [x] Require proof of control over the linked LinkedIn profile before transferring draft work and ratings. The claimant reviews the draft and an administrator checks the code on LinkedIn. Only the owner can edit the transferred work history.
+- [x] Keep previously private drafts private until their creators choose to share them.
+- [x] Create and copy a single-use invitation link directly from private drafts, including older pending requests.
 
 Shared-date checks use the participant's saved work history and company aliases. A local browser-extension prototype exists, but it is deferred: the product must work without users installing extensions.
 
