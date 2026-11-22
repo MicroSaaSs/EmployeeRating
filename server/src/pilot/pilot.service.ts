@@ -10,6 +10,10 @@ const workQuery = `SELECT w.id, c.name AS company, w.title, w.start_date::text A
   FROM work_history w JOIN companies c ON c.id = w.company_id WHERE w.user_id = $1 ORDER BY w.start_date DESC, w.id`;
 const workTitleKey = (title: string) => cleanCompany(title).toLowerCase().replace(/^1с(?=$|[\s:/()-])/u, "1c");
 const ratingFields = `r.id, r.overall, r.categories, r.feedback, r.anonymous, r.hidden, r.updated_at AS "updatedAt"`;
+const sharedWork = (author: string, colleague: string) => `EXISTS (
+  SELECT 1 FROM work_history a JOIN work_history r ON a.company_id = r.company_id
+  WHERE a.user_id = ${author} AND r.user_id = ${colleague} AND ${overlapStart} <= ${overlapEnd}
+)`;
 
 @Injectable()
 export class PilotService {
@@ -18,17 +22,15 @@ export class PilotService {
   async dashboard(userId: string) {
     const { rows: [summary] } = await this.db.pool.query<{
       workHistoryCount: number;
-      directoryVisible: boolean;
       eligibleColleagueCount: number;
       unopenedRatingCount: number;
     }>(
-      `SELECT u.directory_visible AS "directoryVisible",
-         (SELECT count(*)::integer FROM work_history WHERE user_id = u.id) AS "workHistoryCount",
+      `SELECT (SELECT count(*)::integer FROM work_history WHERE user_id = u.id) AS "workHistoryCount",
          (SELECT count(DISTINCT r.user_id)::integer
           FROM work_history a JOIN work_history r ON a.company_id = r.company_id
           JOIN users colleague ON colleague.id = r.user_id
           WHERE a.user_id = u.id AND r.user_id <> u.id
-            AND colleague.directory_visible AND colleague.suspended_at IS NULL
+            AND colleague.suspended_at IS NULL
             AND ${overlapStart} <= ${overlapEnd}) AS "eligibleColleagueCount",
          (SELECT count(*)::integer FROM ratings
           WHERE recipient_id = u.id AND NOT hidden AND first_opened_at IS NULL) AS "unopenedRatingCount"
@@ -41,8 +43,8 @@ export class PilotService {
 
   async work(userId: string) {
     const { rows } = await this.db.pool.query(workQuery, [userId]);
-    const result = await this.db.pool.query<{ visible: boolean }>(
-      `SELECT directory_visible AS visible, linkedin_profile_url AS "linkedinProfileUrl"
+    const result = await this.db.pool.query<{ linkedinProfileUrl: string | null }>(
+      `SELECT linkedin_profile_url AS "linkedinProfileUrl"
        FROM users WHERE id = $1 AND suspended_at IS NULL`, [userId],
     );
     if (!result.rowCount) throw new UnauthorizedException("Sign in to continue.");
@@ -146,14 +148,6 @@ export class PilotService {
     });
   }
 
-  async setVisibility(userId: string, visible: boolean) {
-    await this.db.limit("work:" + userId, 60);
-    const result = await this.db.pool.query(
-      "UPDATE users SET directory_visible = $2 WHERE id = $1 AND suspended_at IS NULL", [userId, visible],
-    );
-    if (!result.rowCount) throw new UnauthorizedException("Sign in to continue.");
-  }
-
   async setLinkedInProfile(userId: string, url: string | null) {
     await this.db.limit("profile-link:" + userId, 30);
     const result = await this.db.pool.query(
@@ -162,28 +156,25 @@ export class PilotService {
     if (!result.rowCount) throw new UnauthorizedException("Sign in to continue.");
   }
 
-  async search(userId: string, term: string, eligibleOnly: boolean, page: number, profileUrl: string | null = null) {
+  async search(userId: string, term: string, page: number, profileUrl: string | null = null) {
     const pageSize = 50;
     const { rows } = await this.db.pool.query<{
       professionals: Array<{ id: string; name: string; eligible: boolean }>;
       hasWorkHistory: boolean;
     }>(
-      `WITH candidates AS (
-         SELECT u.id, u.name, EXISTS (
-           SELECT 1 FROM work_history a JOIN work_history r ON r.company_id = a.company_id
-           WHERE a.user_id = $1 AND r.user_id = u.id AND ${overlapStart} <= ${overlapEnd}
-         ) AS eligible
-         FROM users u
-         WHERE u.directory_visible AND u.suspended_at IS NULL AND u.id <> $1
-           AND CASE WHEN $6::text IS NOT NULL THEN u.linkedin_profile_url = $6
+      `WITH matches AS (
+         SELECT DISTINCT u.id, u.name, true AS eligible
+         FROM work_history a JOIN work_history r ON a.company_id = r.company_id
+         JOIN users u ON u.id = r.user_id
+         WHERE a.user_id = $1 AND u.id <> $1 AND u.suspended_at IS NULL
+           AND ${overlapStart} <= ${overlapEnd}
+           AND CASE WHEN $5::text IS NOT NULL THEN u.linkedin_profile_url = $5
                     ELSE strpos(lower(u.name), lower($2)) > 0 END
-       ), directory_page AS (
-         SELECT id, name, eligible FROM candidates WHERE NOT $3 OR eligible
-         ORDER BY name, id LIMIT $4 OFFSET $5
+         ORDER BY name, id LIMIT $3 OFFSET $4
        )
-       SELECT coalesce((SELECT jsonb_agg(p ORDER BY p.name, p.id) FROM directory_page p), '[]'::jsonb) AS professionals,
+       SELECT coalesce((SELECT jsonb_agg(p ORDER BY p.name, p.id) FROM matches p), '[]'::jsonb) AS professionals,
          EXISTS (SELECT 1 FROM work_history WHERE user_id = $1) AS "hasWorkHistory"`,
-      [userId, term, eligibleOnly, pageSize + 1, (page - 1) * pageSize, profileUrl],
+      [userId, term, pageSize + 1, (page - 1) * pageSize, profileUrl],
     );
     const { professionals, hasWorkHistory } = rows[0];
     return { professionals: professionals.slice(0, pageSize), hasMore: professionals.length > pageSize, hasWorkHistory };
@@ -191,12 +182,13 @@ export class PilotService {
 
   async profile(userId: string, recipientId: string) {
     const result = await this.db.pool.query(
-      "SELECT id, name FROM users WHERE id = $1 AND directory_visible AND suspended_at IS NULL AND id <> $2",
+      `SELECT id, name, true AS eligible FROM users u
+       WHERE id = $1 AND suspended_at IS NULL AND id <> $2 AND ${sharedWork("$2", "u.id")}`,
       [recipientId, userId],
     );
     const recipient = result.rows[0];
     if (!recipient) throw new NotFoundException("Colleague not found.");
-    return { ...recipient, eligible: Boolean(await this.overlap(this.db.pool, userId, recipientId)) };
+    return recipient;
   }
 
   private async overlap(client: Pool | PoolClient, author: string, recipient: string) {
@@ -228,12 +220,12 @@ export class PilotService {
 
     return this.db.transaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock_shared(114010, 2)");
-      const { rows } = await client.query<{ id: string; directory_visible: boolean }>(
-        `SELECT id, directory_visible FROM users WHERE id IN ($1, $2) AND suspended_at IS NULL
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM users WHERE id IN ($1, $2) AND suspended_at IS NULL
          ORDER BY id FOR NO KEY UPDATE`, [author, recipient],
       );
       if (!rows.some((row) => row.id === author)) throw new UnauthorizedException("Sign in to continue.");
-      if (!rows.find((row) => row.id === recipient)?.directory_visible) {
+      if (!rows.some(row => row.id === recipient)) {
         throw new NotFoundException("Colleague not found.");
       }
       const settings = await client.query<{ submissions_paused: boolean }>(
@@ -268,7 +260,7 @@ export class PilotService {
     const [given, received] = await Promise.all([
       this.db.pool.query(
         `SELECT ${ratingFields}, u.name, u.id AS "personId",
-           (u.directory_visible AND u.suspended_at IS NULL) AS "canOpenProfile"
+           (u.suspended_at IS NULL AND ${sharedWork("$1", "u.id")}) AS "canOpenProfile"
          FROM ratings r JOIN users u ON u.id = r.recipient_id WHERE r.author_id = $1
          ORDER BY r.updated_at DESC`, [userId],
       ),

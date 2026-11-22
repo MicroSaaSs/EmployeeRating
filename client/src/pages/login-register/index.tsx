@@ -72,7 +72,7 @@ export function PilotPolicy({ privacy = false }: { privacy?: boolean }) {
     <h1 className="pilot-title">{privacy ? "Privacy notice" : "Community rules"}</h1>
     <div className="pilot-card mt-6 space-y-4 leading-relaxed">
       {privacy ? <>
-        <p>We use your LinkedIn account identifier and display name for sign-in. If you accept an invitation, we record that it was used by your account. You enter your employer and dates. If you opt into the directory, other signed-in users can find you by name and see whether they are eligible to rate you.</p>
+        <p>We use your LinkedIn account identifier and display name for sign-in. If you accept an invitation, we record that it was used by your account. E-ProRate uses the work dates you save to find colleagues who worked at the same company at the same time. Those colleagues can find your profile and give you private feedback. Your saved employment dates stay private.</p>
         <p>Ratings are private to the author and recipient. Anonymous mode hides your name from the recipient. Authorized operators can review reported feedback, authorship, and the recorded date overlap. Work history and feedback can identify people, so avoid naming others in a rating.</p>
         <p>Administrators can see aggregate activity, including how often received ratings are opened and how long report decisions take.</p>
         <p>Contact E-ProRate support to request access to or removal of your account data.</p>

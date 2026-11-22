@@ -20,7 +20,6 @@ export interface PilotMetrics {
   invitesRedeemed: number;
   accounts: number;
   accountsWithHistory: number;
-  directoryParticipants: number;
   accountsWithEligibleColleague: number;
   ratings: number;
   ratingsOpened: number;
@@ -143,7 +142,7 @@ export class PilotOperationsService {
 
   async metrics() {
     const { rows } = await this.db.pool.query<PilotMetrics>(`
-      WITH participants AS (SELECT id, directory_visible FROM users WHERE role = 'participant' AND suspended_at IS NULL)
+      WITH participants AS (SELECT id FROM users WHERE role = 'participant' AND suspended_at IS NULL)
       SELECT
         measured_from AS "signInsMeasuredFrom",
         sign_ins_started::float8 AS "signInsStarted",
@@ -151,13 +150,12 @@ export class PilotOperationsService {
         invites_issued::float8 AS "invitesIssued",
         invites_redeemed::float8 AS "invitesRedeemed",
         (SELECT count(*)::float8 FROM participants) AS accounts,
-        (SELECT count(*)::float8 FROM participants WHERE directory_visible) AS "directoryParticipants",
         (SELECT count(*)::float8 FROM participants p
          WHERE EXISTS (SELECT 1 FROM work_history WHERE user_id = p.id)) AS "accountsWithHistory",
         (SELECT count(*)::float8 FROM participants p WHERE EXISTS (
           SELECT 1 FROM work_history a JOIN work_history r ON r.company_id = a.company_id
           JOIN users colleague ON colleague.id = r.user_id
-          WHERE a.user_id = p.id AND colleague.id <> p.id AND colleague.directory_visible AND colleague.suspended_at IS NULL
+          WHERE a.user_id = p.id AND colleague.id <> p.id AND colleague.suspended_at IS NULL
             AND ${overlapStart} <= ${overlapEnd}
         )) AS "accountsWithEligibleColleague",
         (SELECT count(*)::float8 FROM ratings) AS ratings,

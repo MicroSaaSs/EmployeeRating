@@ -50,10 +50,18 @@ function RatingForm({ id, rating }: { id: string; rating: Rating | null }) {
         <textarea className="pilot-field mt-1" required minLength={20} maxLength={2000} rows={5} value={feedback} onChange={(e) => setFeedback(e.target.value)} />
         <span className="text-sm text-slate-600">20 to 2,000 characters. Use examples from your work together.</span>
       </label>
-      <label className="flex items-start gap-2">
-        <input type="checkbox" className="mt-1" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} />
-        <span>Hide my name from the recipient. Authorized operators can see it when reviewing a report.</span>
-      </label>
+      <fieldset className="space-y-2">
+        <legend className="font-semibold">How should your name appear?</legend>
+        <label className="flex items-center gap-2">
+          <input type="radio" name="rating-attribution" checked={anonymous} onChange={() => setAnonymous(true)} />
+          <span>Anonymous</span>
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="radio" name="rating-attribution" checked={!anonymous} onChange={() => setAnonymous(false)} />
+          <span>Show my name to this colleague</span>
+        </label>
+        <p className="text-sm text-slate-600">The rating is private. Authorized administrators can see the author when reviewing a report.</p>
+      </fieldset>
       {error && <p role="alert" className="text-red-800">{error}</p>}
       {rating?.hidden && <p role="status">This rating is hidden by moderation.</p>}
       <button className="pilot-button">{pending ? "Saving…" : rating ? "Save changes" : "Submit private rating"}</button>

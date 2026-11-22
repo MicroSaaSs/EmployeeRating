@@ -120,7 +120,7 @@ export default function PilotAccounts() {
         {selected?.id === account.id && <form className="space-y-3" onSubmit={save}>
           <p className="text-sm text-slate-600">{selected.suspendedAt
             ? "This lets the participant sign in again."
-            : "This ends the participant’s sessions and hides their directory profile."}</p>
+            : "This signs the member out and takes them out of colleague search."}</p>
           <label className="block">Internal reason
             <textarea className="pilot-field mt-1" value={note} onChange={(event) => setNote(event.target.value)}
               minLength={3} maxLength={1000} required disabled={pending} />

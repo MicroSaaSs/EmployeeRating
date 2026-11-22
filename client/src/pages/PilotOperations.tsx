@@ -23,7 +23,6 @@ type Metrics = {
   invitesRedeemed: number;
   accounts: number;
   accountsWithHistory: number;
-  directoryParticipants: number;
   accountsWithEligibleColleague: number;
   ratings: number;
   ratingsOpened: number;
@@ -48,7 +47,6 @@ function Activity({ data }: { data: Metrics }) {
       ["Invitations redeemed", `${data.invitesRedeemed} of ${data.invitesIssued}`],
       ["Sign-ins completed", `${data.signInsCompleted} of ${data.signInsStarted}`],
       ["Participants with work history", `${data.accountsWithHistory} of ${data.accounts}`],
-      ["Participants in the directory", `${data.directoryParticipants} of ${data.accounts}`],
       ["Participants with an eligible colleague", `${data.accountsWithEligibleColleague} of ${data.accounts}`],
     ] },
     { title: "Ratings and moderation", rows: [

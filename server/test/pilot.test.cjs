@@ -128,7 +128,7 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     assert.equal((await api("/work-history/linkedin-browser/00000000-0000-4000-8000-000000000000", alice)).status, 404);
     assert.equal((await api("/work-history/import-linkedin", { cookie: alice.cookie, method: "POST", body: { url: "https://www.linkedin.com/in/example/" }, from: "https://other.example" })).status, 403);
     assert.deepEqual((await api("/dashboard", alice)).json, {
-      directoryVisible: false, workHistoryCount: 0, eligibleColleagueCount: 0, unopenedRatingCount: 0,
+      workHistoryCount: 0, eligibleColleagueCount: 0, unopenedRatingCount: 0,
     });
     for (const browser of [attempt.browser, wrongBrowser.browser]) {
       assert.match((await complete("alice", wrongBrowser.state, browser)).headers.get("location"),
@@ -142,7 +142,7 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     const directMember = await join("outside", "Direct Member");
     assert.equal(directMember.role, "participant");
     assert.equal((await api("/pilot/metrics", directMember)).status, 403);
-    assert.equal((await api("/dashboard", directMember)).json.directoryVisible, false);
+    assert.equal((await api("/dashboard", directMember)).json.eligibleColleagueCount, 0);
     const expired = await begin();
     await db.pool.query("UPDATE oauth_attempts SET expires_at = now() WHERE state_digest = $1", [digest(expired.state)]);
     const callsBeforeExpiry = providerCalls;
@@ -175,7 +175,6 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     async function work(user, company, start, end) {
       const added = await api("/work-history", { ...user, method: "POST", body: { company, title: "Engineer", start, end } });
       assert.equal(added.status, 204, JSON.stringify(added.json));
-      assert.equal((await api("/directory-visibility", { ...user, method: "PUT", body: { visible: true } })).status, 204);
     }
 
     await work(alice, "  Same  Company  ", "2021-01-01", "2023-01-01");
@@ -197,7 +196,7 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
       ...bob, method: "POST", body: { company: "Same Co", title: "Engineering lead", start: "2023-01-01", end: null },
     })).status, 204);
     assert.deepEqual((await api("/dashboard", alice)).json, {
-      directoryVisible: true, workHistoryCount: 1, eligibleColleagueCount: 1, unopenedRatingCount: 0,
+      workHistoryCount: 1, eligibleColleagueCount: 1, unopenedRatingCount: 0,
     });
     const companies = await api("/pilot/companies?q=same%20co", operator);
     assert.deepEqual(companies.json.companies.map(({ name, aliases }) => ({ name, aliases })), [
@@ -244,9 +243,7 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     assert.deepEqual((await api("/professionals/search?eligible=1", operator)).json, {
       professionals: [], hasMore: false, hasWorkHistory: false,
     });
-    assert.deepEqual((await api("/professionals/search?q=Another", alice)).json.professionals, [
-      { id: other.id, name: "Another Pilot", eligible: false },
-    ]);
+    assert.deepEqual((await api("/professionals/search?q=Another", alice)).json.professionals, []);
     const profileLink = "https://www.linkedin.com/in/example-colleague/";
     const saveProfileLink = (user, value) => api("/linkedin-profile", { ...user, method: "PUT", body: { url: value } });
     const searchLink = (link, user = alice, filters = "") => api("/professionals/search?q=" + encodeURIComponent(link) + filters, user);
@@ -258,8 +255,8 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     ]);
     assert.deepEqual((await searchLink(profileLink, bob)).json.professionals, []);
     assert.equal((await saveProfileLink(other, profileLink)).status, 204);
-    assert.equal((await searchLink(profileLink)).json.professionals.length, 2,
-      "Member-provided links must not grant exclusive ownership over another person's profile");
+    assert.deepEqual((await searchLink(profileLink)).json.professionals, [{ id: bob.id, name: "Bob Pilot", eligible: true }],
+      "A profile link must not reveal a member without shared work dates");
     assert.deepEqual((await searchLink(profileLink, alice, "&eligible=1")).json.professionals, [
       { id: bob.id, name: "Bob Pilot", eligible: true },
     ]);
@@ -276,32 +273,37 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     assert.equal((await api("/work-history", bob)).json.linkedinProfileUrl, profileLink);
     assert.equal((await api("/professionals/search?eligible=yes", alice)).status, 400);
     assert.equal((await api("/professionals/search?page=0", alice)).status, 400);
-    assert.equal((await api("/directory-visibility", { ...bob, method: "PUT", body: { visible: false } })).status, 204);
-    assert.deepEqual((await searchLink(profileLink)).json.professionals, []);
-    assert.equal((await api("/dashboard", alice)).json.eligibleColleagueCount, 0);
-    assert.equal((await api("/dashboard", bob)).json.directoryVisible, false);
-    assert.deepEqual((await api("/professionals/search?q=bob&eligible=1", alice)).json.professionals, []);
-    assert.equal((await api("/professionals/" + bob.id, alice)).status, 404);
-    assert.equal((await api("/directory-visibility", { ...bob, method: "PUT", body: { visible: true } })).status, 204);
+    assert.equal((await api("/directory-visibility", { ...bob, method: "PUT", body: { visible: false } })).status, 404);
+    assert.equal((await api("/dashboard", alice)).json.eligibleColleagueCount, 1);
+    assert.equal((await api("/dashboard", bob)).json.eligibleColleagueCount, 1);
+    assert.deepEqual((await api("/professionals/search?q=Alice", bob)).json.professionals, [
+      { id: alice.id, name: "Alice Pilot", eligible: true },
+    ]);
 
     await db.pool.query(
-      `INSERT INTO users (issuer, subject, name, role, directory_visible)
-       SELECT 'https://example.test', 'directory-page-' || n, 'A Directory Test ' || lpad(n::text, 3, '0'), 'operator', true
-       FROM generate_series(1, 51) AS n`,
+      `WITH accounts AS (
+         INSERT INTO users (issuer, subject, name, role)
+         SELECT 'https://example.test', 'colleague-page-' || n, 'Colleague Page Test ' || lpad(n::text, 3, '0'), 'operator'
+         FROM generate_series(1, 51) AS n RETURNING id
+       )
+       INSERT INTO work_history (user_id, company_id, title, start_date, end_date)
+       SELECT accounts.id, companies.id, 'Engineer', '2022-01-01', '2022-12-31'
+       FROM accounts CROSS JOIN companies WHERE companies.name_key = 'same company'`,
     );
-    const firstPage = (await api("/professionals/search?q=Directory", alice)).json;
+    const firstPage = (await api("/professionals/search?q=Colleague%20Page", alice)).json;
     assert.equal(firstPage.professionals.length, 50);
     assert.equal(firstPage.hasMore, true);
-    const nextPage = (await api("/professionals/search?q=Directory&page=2", alice)).json;
+    const nextPage = (await api("/professionals/search?q=Colleague%20Page&page=2", alice)).json;
     assert.equal(nextPage.professionals.length, 1);
-    assert.equal(nextPage.professionals[0].name, "A Directory Test 051");
+    assert.equal(nextPage.professionals[0].name, "Colleague Page Test 051");
     assert.equal(nextPage.hasMore, false);
+    await db.pool.query("DELETE FROM users WHERE issuer='https://example.test' AND subject LIKE 'colleague-page-%'");
     assert.deepEqual((await api("/professionals/search?eligible=1", alice)).json.professionals, [
       { id: bob.id, name: "Bob Pilot", eligible: true },
     ]);
     const profile = await api("/professionals/" + bob.id, alice);
     assert.deepEqual(profile.json, { id: bob.id, name: "Bob Pilot", eligible: true });
-    assert.equal((await api("/professionals/" + other.id, alice)).json.eligible, false);
+    assert.equal((await api("/professionals/" + other.id, alice)).status, 404);
     const aliceWork = (await api("/work-history", alice)).json.history[0];
     assert.equal((await api("/work-history/" + aliceWork.id, { ...bob, method: "DELETE" })).status, 404);
 
@@ -328,6 +330,11 @@ test("LinkedIn sign-up, invitation linking, private ratings and moderation", asy
     assert.equal(received[0].name, "Anonymous colleague");
     assert.equal(received[0].authorId, undefined);
     assert.equal(received[0].eligibility, undefined);
+    assert.equal((await api("/ratings/for/" + bob.id, { ...alice, method: "PUT", body: { ...body, anonymous: false } })).status, 200);
+    const [named] = (await api("/ratings/mine", bob)).json.received;
+    assert.equal(named.id, received[0].id);
+    assert.equal(named.name, "Alice Pilot");
+    assert.equal((await api("/ratings/for/" + bob.id, { ...alice, method: "PUT", body })).status, 200);
     assert.deepEqual((await api("/ratings/mine", other)).json, { given: [], received: [] });
     assert.equal((await api("/ratings/for/" + bob.id, other)).json.rating, null);
 

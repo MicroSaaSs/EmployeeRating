@@ -96,12 +96,6 @@ export class PilotController {
     await this.pilot.deleteWork((await this.auth.requireUser(req)).id, id);
   }
 
-  @Put("directory-visibility")
-  @HttpCode(204)
-  async visibility(@Req() req: Request, @Body() body: unknown) {
-    await this.pilot.setVisibility((await this.auth.requireUser(req)).id, boolean(object(body).visible));
-  }
-
   @Put("linkedin-profile")
   @HttpCode(204)
   async setLinkedInProfile(@Req() req: Request, @Body() body: unknown) {
@@ -119,10 +113,10 @@ export class PilotController {
   ) {
     const user = await this.auth.requireUser(req);
     if (eligible !== undefined && eligible !== "0" && eligible !== "1") {
-      throw new BadRequestException("Choose whether to show eligible colleagues only.");
+      throw new BadRequestException("Invalid legacy search filter.");
     }
     const query = colleagueSearch(term);
-    return this.pilot.search(user.id, query.term, eligible === "1", pageNumber(page), query.profileUrl);
+    return this.pilot.search(user.id, query.term, pageNumber(page), query.profileUrl);
   }
 
   @Get("professionals/:id")

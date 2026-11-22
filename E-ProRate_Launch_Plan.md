@@ -64,9 +64,9 @@ Start from the restored `codex/restored-main` checkout at `1da60e2`. The TypeScr
 
 1. **Work history.**
    - [ ] Let participants add, edit, and remove their own employer, title, start date, and optional end date. Store structured dates and a canonical company ID. Let an operator resolve ambiguous company names during the pilot. Label the entries as self-reported. LinkedIn sign-in supplies account and basic profile information. [LinkedIn OpenID Connect guide](https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/sign-in-with-linkedin-v2)
-   - [ ] Replace the simulated LinkedIn work-history UI with this data. Show only the directory fields participants agree to share. Seed demo accounts in local development only.
+   - [ ] Replace the simulated LinkedIn work-history UI with this data. Use saved dates privately to find eligible colleagues. Seed demo accounts in local development only.
 2. **Eligibility and navigation.**
-   - [ ] Search the pilot directory by name and use stable routes such as `/professionals/:id` and `/professionals/:id/rate`. Load the selected participant from the API and handle hidden, missing, and ineligible profiles.
+   - [ ] Search for colleagues by name or LinkedIn profile link and use stable routes such as `/professionals/:id` and `/professionals/:id/rate`. Return active colleagues with overlapping dates at the same company and handle unavailable profiles.
    - [ ] On the server, require both active pilot accounts to have overlapping date ranges for the same company. Treat an open end date as today and use inclusive date boundaries for the pilot. Reject self-ratings and non-overlapping history. Save the minimum eligibility evidence and rule version with the rating for staff review. Treat overlap as an eligibility signal based on the participants' reports.
 3. **Private rating submission and visibility.**
    - [ ] Persist the overall score, category scores, written feedback, and author visibility choice. Derive the author from the session and validate the payload. Enforce one rating per author and recipient in PostgreSQL. Allow the author to edit the existing rating and recheck eligibility when its content changes. Save the rating and its eligibility evidence atomically so retries and concurrent requests cannot create duplicates.
@@ -98,9 +98,14 @@ The operator's **Administration** screen supports creating and revoking particip
 
 Work history imports LinkedIn profile PDFs, Positions CSV files, and shared LinkedIn tabs locally. Members can edit the imported roles, see estimated dates and saved matches, and save selected roles together. **Administration → Companies** lets operators search company names and aliases, preview the affected work history entries, and link spelling variants that refer to the same employer.
 
-The participant dashboard points to work history or eligible colleagues as their account progresses. It shows directory visibility and the count of unopened ratings.
+The member dashboard points to work history or eligible colleagues and shows the count of unopened ratings.
 
-Colleague search accepts LinkedIn profile links added by participants in the work-history directory settings. Links are self-reported. Searches respect directory visibility, suspension, and work-history eligibility.
+Colleague search accepts names and self-reported LinkedIn profile links. Active members appear to each other automatically when their saved work dates overlap at the same company. The author chooses anonymous or named attribution for each private rating.
+
+### Colleague discovery and rating attribution — 22 November 2026
+
+- [x] Remove the directory visibility switch. Discoverability and rating eligibility come from the same-company date overlap and active account status.
+- [x] Show **Anonymous** and **Show my name to this colleague** as two choices when writing a rating.
 
 For colleagues outside the pilot, participants can import a saved LinkedIn PDF into a private draft and request an invitation. Operators review requests under **Administration → Requests** and prepare a single-use participant link. A draft's work history is private to its owner. The colleague completes the existing sign-in and onboarding flow after receiving an invitation.
 

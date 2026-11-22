@@ -43,7 +43,7 @@ function LinkedInProfileField({ savedUrl, disabled, onSaved }: {
           setNotice("");
         }} />
     </label>
-    <p id="linkedin-profile-help" className="mt-2 text-sm text-slate-600">Members can search for this link when your profile is visible. Clear the field to remove the link.</p>
+    <p id="linkedin-profile-help" className="mt-2 text-sm text-slate-600">Colleagues with shared work dates can use this link to find you. Clear the field to remove the link.</p>
     <button className="pilot-button-secondary mt-3" disabled={disabled || pending}>{pending ? "Saving…" : "Save profile link"}</button>
     {error && <p className="mt-2 text-sm text-red-800" role="alert">{error}</p>}
     {notice && <p className="mt-2 text-sm text-success-800" role="status">{notice}</p>}
@@ -59,7 +59,7 @@ function focusSection(id: string) {
 }
 
 export default function WorkHistory() {
-  const work = useResource<{ history: WorkEntry[]; visible: boolean; linkedinProfileUrl: string | null }>("/work-history");
+  const work = useResource<{ history: WorkEntry[]; linkedinProfileUrl: string | null }>("/work-history");
   const { hash } = useLocation();
   const [entry, setEntry] = useState(empty);
   const [editing, setEditing] = useState<string>();
@@ -258,19 +258,10 @@ export default function WorkHistory() {
       </section>
       <details id="directory-visibility" className="pilot-card group scroll-mt-5" open={hash === "#directory-visibility" || undefined}>
         <summary className="flex cursor-pointer list-none items-start justify-between gap-3 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
-          <span><span className="block text-base font-semibold">Directory settings</span>{work.data && <span className="mt-1 block text-sm text-slate-600">{work.data.visible ? "Your profile is visible to other members." : "Your profile is hidden from the directory."}</span>}</span>
+          <span><span className="block text-base font-semibold">LinkedIn profile link</span><span className="mt-1 block text-sm text-slate-600">Optional · Helps colleagues search by profile link</span></span>
           <ChevronDown size={20} className="shrink-0 text-primary group-open:rotate-180" aria-hidden="true" />
         </summary>
-        {work.data && <>
-        <label className="mt-4 flex items-start gap-3 text-sm">
-          <input type="checkbox" className="mt-0.5 rounded border-border-dark text-primary focus:ring-primary" checked={work.data.visible} disabled={pending} onChange={event => {
-            const visible = event.target.checked;
-            void change(async () => { await send("/directory-visibility", "PUT", { visible }); return "Directory setting saved."; });
-          }} />
-          <span>Let members find me by name and check whether they can rate me.</span>
-        </label>
-        <LinkedInProfileField savedUrl={work.data.linkedinProfileUrl} disabled={pending || reading} onSaved={work.refresh} />
-        </>}
+        {work.data && <LinkedInProfileField savedUrl={work.data.linkedinProfileUrl} disabled={pending || reading} onSaved={work.refresh} />}
       </details>
     </div>
   </main>;

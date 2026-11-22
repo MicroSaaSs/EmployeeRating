@@ -15,7 +15,6 @@ export default function ProfessionalSearchDiscovery() {
   const [params, setParams] = useSearchParams();
   const query = params.get("q") || "";
   const linkSearch = /^(?:https?:\/\/|(?:[\w-]+\.)?linkedin\.com\/)/i.test(query.trim());
-  const eligibleOnly = params.get("eligible") === "1";
   const page = Number(params.get("page") ?? "1");
   const [name, setName] = useState(query);
   const nameInput = useRef<HTMLInputElement>(null);
@@ -24,18 +23,17 @@ export default function ProfessionalSearchDiscovery() {
   const [importUrl, setImportUrl] = useState("");
   useEffect(() => { if (importOpen) importPanel.current?.scrollIntoView({ block: "start", behavior: "smooth" }); }, [importOpen, importUrl]);
   useEffect(() => setName(query), [query]);
-  const directoryQuery = new URLSearchParams({ q: query, eligible: eligibleOnly ? "1" : "0", page: String(page) });
+  const directoryQuery = new URLSearchParams({ q: query, page: String(page) });
   const result = useResource<Directory>("/professionals/search?" + directoryQuery);
 
   function search(event: FormEvent) {
     event.preventDefault();
-    show(name.trim(), eligibleOnly, 1);
+    show(name.trim(), 1);
   }
 
-  function show(term: string, onlyEligible: boolean, nextPage: number) {
+  function show(term: string, nextPage: number) {
     const next = new URLSearchParams();
     if (term) next.set("q", term);
-    if (onlyEligible) next.set("eligible", "1");
     if (nextPage > 1) next.set("page", String(nextPage));
     setParams(next);
   }
@@ -49,14 +47,14 @@ export default function ProfessionalSearchDiscovery() {
   return (
     <main className="pilot-main">
       <h1 className="pilot-title">Find colleagues</h1>
-      <p className="mt-2 text-slate-600">Only members who opted into the directory appear here.</p>
+      <p className="mt-2 text-slate-600">Find people whose saved work dates overlap yours at the same company.</p>
       <div className="mt-3 flex flex-wrap items-center gap-4">
         <button type="button" className="pilot-button-secondary" onClick={() => openImport(name)}>Import colleague from LinkedIn</button>
         <Link className="pilot-link text-sm" to="/colleague-drafts">My private colleague drafts</Link>
       </div>
       {result.data && !result.data.hasWorkHistory && <section className="pilot-card mt-5">
-        <h2 className="font-semibold">Add your work history to check eligibility</h2>
-        <p className="mb-3 mt-1 text-slate-600">A rating requires overlapping employment dates at the same company.</p>
+        <h2 className="font-semibold">Add your work history to find colleagues</h2>
+        <p className="mb-3 mt-1 text-slate-600">E-ProRate uses your saved companies and dates to find people you worked with.</p>
         <Link className="pilot-link" to="/work-history">Add work history</Link>
       </section>}
       <form className="mt-6 grid max-w-xl gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={search}>
@@ -70,7 +68,7 @@ export default function ProfessionalSearchDiscovery() {
               className="absolute inset-y-0 right-1 my-auto flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-primary-50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               onClick={() => {
                 setName("");
-                show("", eligibleOnly, 1);
+                show("", 1);
                 nameInput.current?.focus();
               }}>
               <X size={18} aria-hidden="true" />
@@ -79,25 +77,18 @@ export default function ProfessionalSearchDiscovery() {
         </div>
         <button className="pilot-button">Search</button>
       </form>
-      <p id="colleague-search-help" className="mt-2 text-sm text-slate-600">Profile links match the links participants have added to their accounts.</p>
-      <nav className="mt-4 flex flex-wrap gap-2" aria-label="Directory results">
-        <button type="button" className={eligibleOnly ? "pilot-button-secondary" : "pilot-button"}
-          aria-pressed={!eligibleOnly} onClick={() => show(query, false, 1)}>All colleagues</button>
-        <button type="button" className={eligibleOnly ? "pilot-button" : "pilot-button-secondary"}
-          aria-pressed={eligibleOnly} onClick={() => show(query, true, 1)}>Eligible to rate</button>
-      </nav>
+      <p id="colleague-search-help" className="mt-2 text-sm text-slate-600">You can search by LinkedIn link when a colleague has added it to their account.</p>
       {result.error && <p role="alert" className="mt-5 text-red-800">{result.error}</p>}
       {!result.data && !result.error && <p role="status" className="mt-5">Loading colleagues…</p>}
-      {result.data?.professionals.length === 0 && <section className="pilot-card mt-5">
-        <h2 className="font-semibold">{eligibleOnly ? "No eligible colleagues found" : "No colleagues found"}</h2>
-        {linkSearch && <>
-          <p className="mt-2 text-sm text-slate-600">No visible participant matches this link{eligibleOnly ? " with overlapping work dates" : ""}. Read their LinkedIn tab or import a saved PDF to review shared work dates and prepare a private draft.</p>
+      {result.data?.hasWorkHistory && !result.data.professionals.length && <section className="pilot-card mt-5">
+        <h2 className="font-semibold">No matching colleagues yet</h2>
+        {linkSearch ? <>
+          <p className="mt-2 text-sm text-slate-600">This link didn’t match a colleague with shared work dates. You can import their experience to check the dates and create a private draft.</p>
           <button type="button" className="pilot-button-secondary mt-3" onClick={() => openImport(query)}>Import LinkedIn profile</button>
+        </> : <>
+          <p className="mt-2 text-sm text-slate-600">Colleagues appear here once they join and add overlapping work dates.</p>
+          <Link className="pilot-link mt-2 inline-block text-sm" to="/work-history">Review your work dates</Link>
         </>}
-        {eligibleOnly && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
-          <button type="button" className="pilot-link" onClick={() => show(query, false, 1)}>Browse all colleagues</button>
-          {result.data.hasWorkHistory && <Link className="pilot-link" to="/work-history">Review your work dates</Link>}
-        </div>}
       </section>}
       {importOpen && <section ref={importPanel} className="pilot-card mt-6 scroll-mt-5" aria-labelledby="colleague-tab-import-heading">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -113,9 +104,7 @@ export default function ProfessionalSearchDiscovery() {
           return <li key={person.id} className="pilot-card flex flex-wrap items-center justify-between gap-3">
             <div>
               <Link className="pilot-link" to={path} state={state}>{person.name}</Link>
-              {result.data?.hasWorkHistory && <p className="mt-1 text-sm text-slate-600">
-                {person.eligible ? "Eligible to rate" : "No work-history overlap"}
-              </p>}
+              {person.eligible && <p className="mt-1 text-sm text-slate-600">Shared work dates</p>}
             </div>
             {person.eligible && <Link className="pilot-button-secondary" to={path + "/rate"} state={state}
               aria-label={"Rate " + person.name}>Rate</Link>}
@@ -124,10 +113,10 @@ export default function ProfessionalSearchDiscovery() {
       </ul>
       {(page > 1 || result.data?.hasMore) && <nav className="mt-5 flex flex-wrap items-center gap-3" aria-label="Directory pages">
         <button type="button" className="pilot-button-secondary" disabled={page <= 1}
-          onClick={() => show(query, eligibleOnly, page - 1)}>Previous</button>
+          onClick={() => show(query, page - 1)}>Previous</button>
         <span className="text-sm text-slate-600">Page {page}</span>
         <button type="button" className="pilot-button-secondary" disabled={!result.data?.hasMore}
-          onClick={() => show(query, eligibleOnly, page + 1)}>Next</button>
+          onClick={() => show(query, page + 1)}>Next</button>
       </nav>}
     </main>
   );
